@@ -310,7 +310,12 @@ class IDAExporter:
         if not ida_hexrays.init_hexrays_plugin():
             self.log("Hex-Rays decompiler not available, skipping pseudocode export.")
             self.timer.end_step("Pseudocode")
-            return
+            return {
+                "attempted": 0,
+                "decompiled": 0,
+                "failed": 0,
+                "hexrays_available": False,
+            }
 
         self.log("Exporting pseudocode...")
         
@@ -322,18 +327,46 @@ class IDAExporter:
             funcs_to_process = [ea for ea in idautils.Functions()]
             
         total_funcs = len(funcs_to_process)
-        tracker = ProgressTracker(total_funcs, self.log, "Pseudocode")
+        start_time = time.time()
+        next_log_time = start_time
+        decompiled = 0
+        failed = 0
+        last_name = ""
+        last_ea = None
 
         data = []
         for i, ea in enumerate(funcs_to_process):
-            tracker.update(i + 1)
             try:
                 cfunc = ida_hexrays.decompile(ea)
                 if cfunc:
                     content = str(cfunc)
                     data.append((ea, content))
+                    decompiled += 1
+                else:
+                    failed += 1
             except Exception as e:
-                pass
+                failed += 1
+
+            last_ea = ea
+            try:
+                last_name = ida_funcs.get_func_name(ea) or ""
+            except Exception:
+                last_name = ""
+
+            now = time.time()
+            if now >= next_log_time or (i + 1) >= total_funcs:
+                elapsed = now - start_time
+                if elapsed < 0.001:
+                    elapsed = 0.001
+                rate = (i + 1) / elapsed
+                remaining = total_funcs - (i + 1)
+                eta_seconds = remaining / rate if rate > 0 else 0
+                percent = ((i + 1) / total_funcs * 100.0) if total_funcs else 100.0
+                where = f"{last_name}@{hex(last_ea)}" if last_ea is not None else ""
+                self.log(
+                    f"Pseudocode: {percent:5.1f}% ({i+1}/{total_funcs}) ok={decompiled} fail={failed} rate={rate:.2f}/s eta={int(eta_seconds)}s {where}".rstrip()
+                )
+                next_log_time = now + 2.0
             
             if len(data) >= 100:
                 self.db.insert_pseudocode(data)
@@ -342,6 +375,12 @@ class IDAExporter:
         if data:
             self.db.insert_pseudocode(data)
         self.timer.end_step("Pseudocode")
+        return {
+            "attempted": total_funcs,
+            "decompiled": decompiled,
+            "failed": failed,
+            "hexrays_available": True,
+        }
 
     def dump_function_list(self, output_path):
         self.log(f"Dumping function list to {output_path}...")

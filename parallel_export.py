@@ -6,16 +6,26 @@ import json
 import shutil
 import sqlite3
 import time
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
-def run_command(cmd, verbose=False, stream_output=False):
-    """
-    Runs a shell command.
-    verbose: If True, prints the command being run.
-    stream_output: If True, prints stdout line-by-line in real-time.
-    """
-    if verbose:
-        print(f"Running: {cmd}", flush=True)
+PRINT_LOCK = threading.Lock()
+
+def _now_ts():
+    return time.strftime("%H:%M:%S", time.localtime())
+
+def _print_line(line):
+    with PRINT_LOCK:
+        print(line, flush=True)
+
+def host_log(msg):
+    _print_line(f"[HOST {_now_ts()}] {msg}")
+
+def run_command(cmd, stream_output=False, prefix=None):
+    if prefix:
+        host_log(f"{prefix} Starting...")
+    else:
+        host_log("Starting command...")
         
     start_time = time.time()
     
@@ -27,7 +37,11 @@ def run_command(cmd, verbose=False, stream_output=False):
             if not line and process.poll() is not None:
                 break
             if line:
-                print(line.rstrip(), flush=True)
+                stripped = line.rstrip()
+                if prefix:
+                    _print_line(f"{prefix} {stripped}")
+                else:
+                    _print_line(stripped)
                 stdout_lines.append(line)
         
         returncode = process.poll()
@@ -42,16 +56,23 @@ def run_command(cmd, verbose=False, stream_output=False):
     duration = time.time() - start_time
     
     if returncode != 0:
-        print(f"Error running command: {cmd}", flush=True)
+        if prefix:
+            host_log(f"{prefix} Failed (exit={returncode}, {duration:.2f}s).")
+        else:
+            host_log(f"Command failed (exit={returncode}, {duration:.2f}s).")
         if not stream_output:
-            print(f"STDOUT: {result_stdout}", flush=True)
-        print(f"STDERR: {result_stderr}", flush=True)
-        return False
+            _print_line(result_stdout.rstrip())
+        _print_line(result_stderr.rstrip())
+        return {"ok": False, "duration": duration, "returncode": returncode, "stdout": result_stdout, "stderr": result_stderr}
         
-    return True
+    if prefix:
+        host_log(f"{prefix} Done ({duration:.2f}s).")
+    else:
+        host_log(f"Done ({duration:.2f}s).")
+    return {"ok": True, "duration": duration, "returncode": returncode, "stdout": result_stdout, "stderr": result_stderr}
 
 def merge_databases(main_db, worker_dbs):
-    print(f"Merging {len(worker_dbs)} worker databases into {main_db}...", flush=True)
+    host_log(f"Merging {len(worker_dbs)} worker databases into {main_db}...")
     conn = sqlite3.connect(main_db)
     cursor = conn.cursor()
     
@@ -67,7 +88,7 @@ def merge_databases(main_db, worker_dbs):
     count = 0
     for worker_db in worker_dbs:
         if not os.path.exists(worker_db):
-            print(f"Warning: Worker DB {worker_db} not found.", flush=True)
+            host_log(f"Warning: Worker DB {worker_db} not found.")
             continue
             
         try:
@@ -81,42 +102,103 @@ def merge_databases(main_db, worker_dbs):
             cursor.execute("DETACH DATABASE worker")
             count += 1
         except Exception as e:
-            print(f"Error merging {worker_db}: {e}", flush=True)
+            host_log(f"Error merging {worker_db}: {e}")
             
     conn.close()
-    print(f"Merged {count} worker databases.", flush=True)
+    host_log(f"Merged {count} worker databases.")
 
-def print_performance_summary(stats):
-    print("\n" + "="*60)
-    print(f"{'PARALLEL EXPORT PERFORMANCE SUMMARY':^60}")
-    print("="*60)
-    
-    total_time = stats['total_time']
-    master_time = stats['master_time']
-    worker_time = stats['worker_time']
-    merge_time = stats['merge_time']
-    total_funcs = stats['total_funcs']
-    workers = stats['workers']
-    
-    print(f"{'Total Time':<30} : {total_time:.2f}s")
-    print(f"{'  - Analysis (Master)':<30} : {master_time:.2f}s")
-    print(f"{'  - Export (Workers)':<30} : {worker_time:.2f}s")
-    print(f"{'  - Merge':<30} : {merge_time:.2f}s")
-    print("-" * 60)
-    print(f"{'Total Functions':<30} : {total_funcs}")
-    print(f"{'Worker Threads':<30} : {workers}")
-    
-    avg_speed = 0
-    if total_time > 0:
-        avg_speed = total_funcs / total_time
-        
-    worker_speed = 0
-    if worker_time > 0:
-        worker_speed = total_funcs / worker_time
+def _load_perf_json(path):
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r") as f:
+            return json.load(f)
+    except Exception:
+        return None
 
-    print(f"{'Overall Speed':<30} : {avg_speed:.2f} funcs/sec")
-    print(f"{'Worker Export Speed':<30} : {worker_speed:.2f} funcs/sec")
-    print("="*60 + "\n")
+def print_full_performance_summary(parallel_stats, master_perf, worker_perfs):
+    total_time = parallel_stats.get("total_time", 0.0)
+    master_time = parallel_stats.get("master_time", 0.0)
+    worker_time = parallel_stats.get("worker_time", 0.0)
+    merge_time = parallel_stats.get("merge_time", 0.0)
+    total_funcs = parallel_stats.get("total_funcs", 0)
+    workers = parallel_stats.get("workers", 0)
+
+    attempted = 0
+    decompiled = 0
+    failed = 0
+    pseudocode_time = 0.0
+
+    for wp in worker_perfs:
+        try:
+            t = wp.get("timer", {})
+            pseudocode_step = None
+            for step in t.get("steps", []):
+                if step.get("name") == "Pseudocode":
+                    pseudocode_step = step
+                    break
+            if pseudocode_step:
+                pseudocode_time += float(pseudocode_step.get("duration", 0.0))
+
+            ps = (wp.get("export", {}) or {}).get("pseudocode", {}) or {}
+            attempted += int(ps.get("attempted", 0))
+            decompiled += int(ps.get("decompiled", 0))
+            failed += int(ps.get("failed", 0))
+        except Exception:
+            continue
+
+    overall_speed = (total_funcs / total_time) if total_time else 0.0
+    worker_speed = (total_funcs / worker_time) if worker_time else 0.0
+    pseudo_speed = (attempted / pseudocode_time) if pseudocode_time else 0.0
+
+    _print_line("")
+    _print_line("=" * 72)
+    _print_line(f"{'FINAL EXPORT PERFORMANCE SUMMARY':^72}")
+    _print_line("=" * 72)
+    _print_line(f"{'Total Time':<28}: {total_time:>10.2f}s")
+    _print_line(f"{'Master (Step 1)':<28}: {master_time:>10.2f}s")
+    _print_line(f"{'Workers (Step 3)':<28}: {worker_time:>10.2f}s")
+    _print_line(f"{'Merge (Step 4)':<28}: {merge_time:>10.2f}s")
+    _print_line("-" * 72)
+    _print_line(f"{'Total Functions':<28}: {total_funcs:>10}")
+    _print_line(f"{'Worker Threads':<28}: {workers:>10}")
+    _print_line(f"{'Overall Speed':<28}: {overall_speed:>10.2f} funcs/sec")
+    _print_line(f"{'Worker Speed':<28}: {worker_speed:>10.2f} funcs/sec")
+    if attempted:
+        _print_line(f"{'Pseudocode Attempted':<28}: {attempted:>10}")
+        _print_line(f"{'Pseudocode Decompiled':<28}: {decompiled:>10}")
+        _print_line(f"{'Pseudocode Failed':<28}: {failed:>10}")
+        _print_line(f"{'Pseudocode Speed':<28}: {pseudo_speed:>10.2f} funcs/sec")
+
+    if master_perf and master_perf.get("timer", {}).get("steps"):
+        _print_line("-" * 72)
+        _print_line("Master Step Breakdown:")
+        for step in master_perf["timer"]["steps"]:
+            name = step.get("name", "")
+            dur = float(step.get("duration", 0.0))
+            _print_line(f"  {name:<26} {dur:>10.2f}s")
+
+    if worker_perfs:
+        _print_line("-" * 72)
+        _print_line("Worker Pseudocode Breakdown:")
+        for idx, wp in enumerate(worker_perfs):
+            ps = (wp.get("export", {}) or {}).get("pseudocode", {}) or {}
+            attempted_i = int(ps.get("attempted", 0))
+            decompiled_i = int(ps.get("decompiled", 0))
+            failed_i = int(ps.get("failed", 0))
+
+            pseudocode_dur = 0.0
+            for step in (wp.get("timer", {}) or {}).get("steps", []):
+                if step.get("name") == "Pseudocode":
+                    pseudocode_dur = float(step.get("duration", 0.0))
+                    break
+            rate_i = (attempted_i / pseudocode_dur) if pseudocode_dur else 0.0
+            _print_line(
+                f"  Worker {idx:<3} {pseudocode_dur:>7.2f}s  funcs={attempted_i:<5} ok={decompiled_i:<5} fail={failed_i:<5} rate={rate_i:>7.2f}/s"
+            )
+
+    _print_line("=" * 72)
+    _print_line("")
 
 def main():
     parser = argparse.ArgumentParser(description="Parallel IDA Pro Export")
@@ -138,9 +220,9 @@ def main():
     else:
         output_db = os.path.splitext(input_path)[0] + ".db"
         
-    print(f"Input: {input_path}")
-    print(f"Output: {output_db}")
-    print(f"Workers: {args.workers}")
+    host_log(f"Input  : {input_path}")
+    host_log(f"Output : {output_db}")
+    host_log(f"Workers: {args.workers}")
     
     # Setup temporary directory
     temp_dir = os.path.join(os.path.dirname(output_db), "ida_parallel_temp")
@@ -156,20 +238,18 @@ def main():
     
     try:
         # Step 1: Run Master (Export Metadata + Dump Functions)
-        print("\n[Step 1/4] Running Master (Analysis & Metadata)...")
+        host_log("[Step 1/4] Running Master (Analysis & Metadata)")
         master_start = time.time()
         
         funcs_json = os.path.join(temp_dir, "funcs.json")
-        master_cmd = f"python ida-export-db.py \"{input_path}\" --output \"{output_db}\" --parallel-master --dump-funcs \"{funcs_json}\""
+        master_perf_json = os.path.join(temp_dir, "perf_master.json")
+        master_cmd = f"python ida-export-db.py \"{input_path}\" --output \"{output_db}\" --parallel-master --dump-funcs \"{funcs_json}\" --perf-json \"{master_perf_json}\" --no-perf-report"
         if args.fast:
             master_cmd += " --fast"
             
-        # We generally want to see master output to know analysis is progressing
-        # But user wants less "useless" logs. 
-        # If we hide it, user sees nothing during analysis.
-        # Let's show it but rely on ida-export-db.py being cleaner.
-        if not run_command(master_cmd, verbose=False, stream_output=True):
-            print("Master step failed. Aborting.")
+        result = run_command(master_cmd, stream_output=True, prefix="[MASTER]")
+        if not result["ok"]:
+            host_log("Master step failed. Aborting.")
             return
             
         stats['master_time'] = time.time() - master_start
@@ -179,13 +259,13 @@ def main():
             return
             
         # Step 2: Split Work
-        print("\n[Step 2/4] Splitting work...")
+        host_log("[Step 2/4] Splitting work")
         with open(funcs_json, 'r') as f:
             all_funcs = json.load(f)
             
         total_funcs = len(all_funcs)
         stats['total_funcs'] = total_funcs
-        print(f"Total functions: {total_funcs}")
+        host_log(f"Total functions: {total_funcs}")
         
         if total_funcs == 0:
             print("No functions found. Nothing to parallelize.")
@@ -200,10 +280,10 @@ def main():
             worker_db = os.path.join(temp_dir, f"worker_{i}.db")
             with open(chunk_file, 'w') as f:
                 json.dump(chunk, f)
-            worker_files.append((chunk_file, worker_db))
+            worker_files.append((chunk_file, worker_db, len(chunk)))
             
         # Step 3: Run Workers
-        print(f"\n[Step 3/4] Launching {len(worker_files)} workers...")
+        host_log(f"[Step 3/4] Launching {len(worker_files)} workers")
         worker_start = time.time()
         
         # We need to be careful with IDB locking.
@@ -218,10 +298,11 @@ def main():
                 break
         
         if not existing_idb:
-            print("Warning: No IDB file found. Workers will try to open binary directly (might cause locking issues).")
+            host_log("Warning: No IDB file found. Workers will try to open binary directly.")
             
         worker_cmds = []
-        for i, (chunk_file, worker_db) in enumerate(worker_files):
+        worker_perf_paths = []
+        for i, (chunk_file, worker_db, chunk_size) in enumerate(worker_files):
             worker_input = input_path
             
             if existing_idb:
@@ -238,38 +319,47 @@ def main():
             cmd = f"python ida-export-db.py \"{worker_input}\" --output \"{worker_db}\" --parallel-worker \"{chunk_file}\""
             if args.fast:
                 cmd += " --fast"
+            perf_json = os.path.join(temp_dir, f"perf_worker_{i}.json")
+            cmd += f" --perf-json \"{perf_json}\" --no-perf-report"
             worker_cmds.append(cmd)
+            worker_perf_paths.append(perf_json)
+            host_log(f"Worker {i}: funcs={chunk_size} db={worker_db}")
 
         # Run workers
-        # For workers, we set verbose=True so we see the command, but stream_output=False
-        # to avoid spamming stdout with interleaved logs.
         with ThreadPoolExecutor(max_workers=args.workers) as executor:
-            futures = [executor.submit(run_command, cmd, False, False) for cmd in worker_cmds]
+            futures = []
+            for i, cmd in enumerate(worker_cmds):
+                futures.append(executor.submit(run_command, cmd, True, f"[W{i}]"))
             results = [f.result() for f in futures]
             
         stats['worker_time'] = time.time() - worker_start
             
-        if not all(results):
-            print("Some workers failed.")
+        if not all(r["ok"] for r in results):
+            host_log("Some workers failed.")
             
         # Step 4: Merge Results
-        print("\n[Step 4/4] Merging results...")
+        host_log("[Step 4/4] Merging results")
         merge_start = time.time()
         
-        worker_dbs = [w_db for _, w_db in worker_files]
+        worker_dbs = [w_db for _, w_db, _ in worker_files]
         merge_databases(output_db, worker_dbs)
         
         stats['merge_time'] = time.time() - merge_start
         stats['total_time'] = time.time() - stats['start_time']
         
-        print(f"\nSuccess! Full export saved to {output_db}")
+        host_log(f"Success! Full export saved to {output_db}")
         
-        # Print Performance Summary
-        print_performance_summary(stats)
+        master_perf = _load_perf_json(master_perf_json)
+        worker_perfs = []
+        for p in worker_perf_paths:
+            wp = _load_perf_json(p)
+            if wp:
+                worker_perfs.append(wp)
+        print_full_performance_summary(stats, master_perf, worker_perfs)
         
     finally:
         # Cleanup
-        print("Cleaning up temporary files...")
+        host_log("Cleaning up temporary files...")
         try:
              # shutil.rmtree(temp_dir) 
              pass

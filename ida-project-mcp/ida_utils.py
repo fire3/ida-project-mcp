@@ -16,19 +16,26 @@ class Logger:
         self.verbose = verbose
         self.logs = []
 
-    def log(self, msg):
+    def log(self, msg, level=None):
         timestamp = time.strftime("%H:%M:%S", time.localtime())
-        formatted_msg = f"[{timestamp}] {msg}"
+        if level:
+            formatted_msg = f"[{timestamp}] [{level}] {msg}"
+        else:
+            formatted_msg = f"[{timestamp}] {msg}"
         self.logs.append(formatted_msg)
         
-        # Always print to stdout for visibility
-        print(f"[IDA] {msg}")
+        if level:
+            line = f"[IDA {timestamp}] [{level}] {msg}"
+        else:
+            line = f"[IDA {timestamp}] {msg}"
+
+        print(line)
         sys.stdout.flush()
         
         # Always log to IDA output window if possible
         if ida_kernwin:
             try:
-                ida_kernwin.msg(f"[IDA] {msg}\n")
+                ida_kernwin.msg(line + "\n")
             except:
                 pass
 
@@ -62,6 +69,13 @@ class PerformanceTimer:
         report.append(f"{'Total Time':<30} | {total_time:.2f}s")
         report.append("="*50 + "\n")
         return "\n".join(report)
+
+    def get_stats(self):
+        total_time = time.time() - self.start_time
+        return {
+            "total_time": total_time,
+            "steps": [{"name": name, "duration": duration} for name, duration in self.steps],
+        }
 
 class ProgressTracker:
     def __init__(self, total, log_func, prefix=""):

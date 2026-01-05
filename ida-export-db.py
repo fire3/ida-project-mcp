@@ -45,6 +45,8 @@ def main():
     parser.add_argument("--parallel-master", action="store_true", help="Run in parallel master mode (dumps functions, skips pseudocode)")
     parser.add_argument("--parallel-worker", help="Path to function list JSON for worker mode (runs ONLY pseudocode)")
     parser.add_argument("--dump-funcs", help="Path to dump function list JSON (used with --parallel-master)")
+    parser.add_argument("--perf-json", help="Write performance stats JSON to this path")
+    parser.add_argument("--no-perf-report", action="store_true", help="Do not print the textual performance summary")
     
     # In IDA, argv[0] is the executable or the script. 
     # If run via "File > Script file", sys.argv is usually just the script path (or empty in some versions).
@@ -155,6 +157,7 @@ def main():
         db.create_schema()
         
         exporter = IDAExporter(db, logger, timer, input_file=root_filename)
+        export_stats = {}
         
         if args.parallel_worker:
             # Worker Mode: Only export pseudocode for assigned functions
@@ -164,7 +167,7 @@ def main():
                 func_list = json.load(f)
             
             logger.log(f"Worker processing {len(func_list)} functions...")
-            exporter.export_pseudocode(function_list=func_list)
+            export_stats["pseudocode"] = exporter.export_pseudocode(function_list=func_list)
             
         elif args.parallel_master:
             # Master Mode: Export everything EXCEPT pseudocode
@@ -195,10 +198,26 @@ def main():
         
         db.close()
         logger.log("Export completed successfully.")
-        
-        # Print Performance Report
-        report = timer.get_report()
-        logger.log(report)
+
+        if args.perf_json:
+            import json
+            payload = {
+                "mode": "parallel_worker" if args.parallel_worker else ("parallel_master" if args.parallel_master else "standard"),
+                "input_file": root_filename,
+                "output_db": db_path,
+                "timer": timer.get_stats(),
+                "export": export_stats,
+                "wall_time": time.time(),
+            }
+            try:
+                with open(args.perf_json, "w") as f:
+                    json.dump(payload, f)
+            except Exception as e:
+                logger.log(f"Failed to write perf json to {args.perf_json}: {e}", level="WARN")
+
+        if not args.no_perf_report:
+            report = timer.get_report()
+            logger.log(report)
         
     except Exception as e:
         logger.log(f"Export failed: {e}")
