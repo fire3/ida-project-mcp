@@ -254,6 +254,18 @@ def main():
         'workers': args.workers,
         'total_funcs': 0
     }
+
+    base_name = os.path.splitext(input_path)[0]
+    existing_idb = None
+    for candidate in [
+        input_path + ".i64",
+        input_path + ".idb",
+        base_name + ".i64",
+        base_name + ".idb",
+    ]:
+        if os.path.exists(candidate):
+            existing_idb = candidate
+            break
     
     try:
         # Step 1: Run Master (Export Metadata + Dump Functions)
@@ -261,8 +273,10 @@ def main():
         master_start = time.time()
         
         funcs_json = os.path.join(temp_dir, "funcs.json")
+        analysis_base = os.path.join(temp_dir, "analysis")
         master_perf_json = os.path.join(temp_dir, "perf_master.json")
-        master_cmd = f"python ida-export-db.py \"{input_path}\" --output \"{output_db}\" --parallel-master --dump-funcs \"{funcs_json}\" --perf-json \"{master_perf_json}\" --no-perf-report"
+        master_input = existing_idb or input_path
+        master_cmd = f"python ida-export-db.py \"{master_input}\" --output \"{output_db}\" --parallel-master --dump-funcs \"{funcs_json}\" --save-idb \"{analysis_base}\" --perf-json \"{master_perf_json}\" --no-perf-report"
         if args.fast:
             master_cmd += " --fast"
             
@@ -305,32 +319,30 @@ def main():
         host_log(f"[Step 3/4] Launching {len(worker_files)} workers")
         worker_start = time.time()
         
-        # We need to be careful with IDB locking.
-        # Strategy: Copy the `.i64` or `.idb` file (created by master) to temp dir for each worker.
-        
-        base_name = os.path.splitext(input_path)[0]
-        idb_exts = [".i64", ".idb"]
-        existing_idb = None
-        for ext in idb_exts:
-            if os.path.exists(base_name + ext):
-                existing_idb = base_name + ext
+        analyzed_idb = None
+        for ext in [".i64", ".idb"]:
+            candidate = analysis_base + ext
+            if os.path.exists(candidate):
+                analyzed_idb = candidate
                 break
-        
-        if not existing_idb:
-            host_log("Warning: No IDB file found. Workers will try to open binary directly.")
+        if not analyzed_idb:
+            analyzed_idb = existing_idb
+
+        if not analyzed_idb:
+            host_log("Warning: No analyzed IDB found from master. Workers will try to open binary directly.")
             
         worker_cmds = []
         worker_perf_paths = []
         for i, (chunk_file, worker_db, chunk_size) in enumerate(worker_files):
             worker_input = input_path
             
-            if existing_idb:
+            if analyzed_idb:
                 # Copy IDB for this worker
-                ext = os.path.splitext(existing_idb)[1]
+                ext = os.path.splitext(analyzed_idb)[1]
                 worker_idb = os.path.join(temp_dir, f"worker_{i}{ext}")
                 try:
                     if not os.path.exists(worker_idb):
-                        shutil.copy2(existing_idb, worker_idb)
+                        shutil.copy2(analyzed_idb, worker_idb)
                     worker_input = worker_idb
                 except Exception as e:
                     print(f"Failed to copy IDB for worker {i}: {e}. Using original input.")

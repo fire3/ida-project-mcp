@@ -45,6 +45,7 @@ def main():
     parser.add_argument("--parallel-master", action="store_true", help="Run in parallel master mode (dumps functions, skips pseudocode)")
     parser.add_argument("--parallel-worker", help="Path to function list JSON for worker mode (runs ONLY pseudocode)")
     parser.add_argument("--dump-funcs", help="Path to dump function list JSON (used with --parallel-master)")
+    parser.add_argument("--save-idb", help="Save analyzed IDB/I64 to this path (optional; extension auto-chosen if omitted)")
     parser.add_argument("--perf-json", help="Write performance stats JSON to this path")
     parser.add_argument("--no-perf-report", action="store_true", help="Do not print the textual performance summary")
     
@@ -149,6 +150,37 @@ def main():
     
     monitor.unhook()
     logger.log("Auto-analysis finished.")
+
+    if args.save_idb:
+        try:
+            import ida_loader
+
+            save_spec = os.path.abspath(args.save_idb)
+            if save_spec.lower().endswith((".i64", ".idb")):
+                save_path = save_spec
+            else:
+                existing_path = None
+                try:
+                    existing_path = ida_nalt.get_idb_path()
+                except Exception:
+                    existing_path = None
+
+                ext = ""
+                if existing_path:
+                    ext = os.path.splitext(existing_path)[1].lower()
+                if ext not in (".i64", ".idb"):
+                    ext = ".i64"
+
+                save_path = save_spec + ext
+
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            ok = ida_loader.save_database(save_path, 0)
+            if ok:
+                logger.log(f"Saved IDA database: {save_path}")
+            else:
+                logger.log(f"Failed to save IDA database: {save_path}", level="WARN")
+        except Exception as e:
+            logger.log(f"Failed to save IDA database: {e}", level="WARN")
 
     # Export Process
     try:
