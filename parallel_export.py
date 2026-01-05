@@ -359,9 +359,8 @@ def main():
         
     finally:
         # Cleanup
-        host_log("Cleaning up temporary files...")
         try:
-             # shutil.rmtree(temp_dir) 
+             shutil.rmtree(temp_dir) 
              pass
         except:
              pass
