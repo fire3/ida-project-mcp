@@ -101,7 +101,7 @@ def main():
         db.connect()
         db.create_schema()
         
-        exporter = IDAExporter(db, logger, timer)
+        exporter = IDAExporter(db, logger, timer, input_file=root_filename)
         exporter.export_all()
         
         db.close()

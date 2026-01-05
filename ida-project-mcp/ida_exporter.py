@@ -1,4 +1,5 @@
 import sys
+import os
 import hashlib
 import zlib
 import json
@@ -32,10 +33,11 @@ except ImportError:
 from ida_utils import ProgressTracker, calculate_entropy
 
 class IDAExporter:
-    def __init__(self, db, logger, timer):
+    def __init__(self, db, logger, timer, input_file=None):
         self.db = db
         self.log = logger.log
         self.timer = timer
+        self.input_file = input_file
 
     def safe_int(self, val):
         if val is None: return None
@@ -70,12 +72,23 @@ class IDAExporter:
         self.log("Exporting metadata...")
         meta = {}
         
-        input_path = ida_nalt.get_input_file_path()
-        with open(input_path, 'rb') as f:
-            content = f.read()
-            meta['sha256'] = hashlib.sha256(content).hexdigest()
-            meta['md5'] = hashlib.md5(content).hexdigest()
-            meta['crc32'] = str(zlib.crc32(content))
+        input_path = None
+        if self.input_file:
+            input_path = self.input_file
+        else:
+             input_path = ida_nalt.get_input_file_path()
+
+        if input_path and os.path.exists(input_path):
+             with open(input_path, 'rb') as f:
+                content = f.read()
+                meta['sha256'] = hashlib.sha256(content).hexdigest()
+                meta['md5'] = hashlib.md5(content).hexdigest()
+                meta['crc32'] = str(zlib.crc32(content))
+        else:
+             self.log(f"Warning: Input file path not found or invalid: {input_path}")
+             meta['sha256'] = ""
+             meta['md5'] = ""
+             meta['crc32'] = ""
         
         meta['file_name'] = ida_nalt.get_root_filename()
         meta['format'] = ida_loader.get_file_type_name()
