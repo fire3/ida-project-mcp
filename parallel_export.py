@@ -186,6 +186,13 @@ def print_full_performance_summary(parallel_stats, master_perf, worker_perfs):
             attempted_i = int(ps.get("attempted", 0))
             decompiled_i = int(ps.get("decompiled", 0))
             failed_i = int(ps.get("failed", 0))
+            thunks_i = int(ps.get("thunks", 0))
+            library_i = int(ps.get("library", 0))
+            nofunc_i = int(ps.get("nofunc", 0))
+            none_i = int(ps.get("none", 0))
+            min_ea_i = ps.get("min_ea", None)
+            max_ea_i = ps.get("max_ea", None)
+            top_errors_i = ps.get("top_errors", []) or []
 
             pseudocode_dur = 0.0
             for step in (wp.get("timer", {}) or {}).get("steps", []):
@@ -193,9 +200,21 @@ def print_full_performance_summary(parallel_stats, master_perf, worker_perfs):
                     pseudocode_dur = float(step.get("duration", 0.0))
                     break
             rate_i = (attempted_i / pseudocode_dur) if pseudocode_dur else 0.0
+
+            range_str = ""
+            try:
+                if min_ea_i is not None and max_ea_i is not None:
+                    range_str = f"{hex(int(min_ea_i))}-{hex(int(max_ea_i))}"
+            except Exception:
+                range_str = ""
             _print_line(
-                f"  Worker {idx:<3} {pseudocode_dur:>7.2f}s  funcs={attempted_i:<5} ok={decompiled_i:<5} fail={failed_i:<5} rate={rate_i:>7.2f}/s"
+                f"  Worker {idx:<3} {pseudocode_dur:>7.2f}s  funcs={attempted_i:<5} ok={decompiled_i:<5} fail={failed_i:<5} thunk={thunks_i:<4} lib={library_i:<4} none={none_i:<4} nofunc={nofunc_i:<4} rate={rate_i:>7.2f}/s {range_str}".rstrip()
             )
+            if failed_i and top_errors_i:
+                for entry in top_errors_i[:3]:
+                    err = str(entry.get("error", ""))
+                    cnt = int(entry.get("count", 0))
+                    _print_line(f"           {cnt}x {err}")
 
     _print_line("=" * 72)
     _print_line("")

@@ -314,6 +314,13 @@ class IDAExporter:
                 "attempted": 0,
                 "decompiled": 0,
                 "failed": 0,
+                "thunks": 0,
+                "library": 0,
+                "nofunc": 0,
+                "none": 0,
+                "min_ea": None,
+                "max_ea": None,
+                "top_errors": [],
                 "hexrays_available": False,
             }
 
@@ -327,15 +334,54 @@ class IDAExporter:
             funcs_to_process = [ea for ea in idautils.Functions()]
             
         total_funcs = len(funcs_to_process)
+        min_ea = None
+        max_ea = None
+        if funcs_to_process:
+            try:
+                min_ea = int(min(funcs_to_process))
+                max_ea = int(max(funcs_to_process))
+            except Exception:
+                min_ea = None
+                max_ea = None
+
         start_time = time.time()
         next_log_time = start_time
         decompiled = 0
         failed = 0
+        thunks = 0
+        library = 0
+        nofunc = 0
+        none_results = 0
+        error_counts = {}
+        error_order = []
         last_name = ""
         last_ea = None
 
         data = []
         for i, ea in enumerate(funcs_to_process):
+            func = None
+            try:
+                func = ida_funcs.get_func(ea)
+            except Exception:
+                func = None
+
+            if not func:
+                nofunc += 1
+                failed += 1
+                key = "no_func"
+                error_counts[key] = error_counts.get(key, 0) + 1
+                if key not in error_order:
+                    error_order.append(key)
+                continue
+
+            try:
+                if func.flags & ida_funcs.FUNC_THUNK:
+                    thunks += 1
+                if func.flags & ida_funcs.FUNC_LIB:
+                    library += 1
+            except Exception:
+                pass
+
             try:
                 cfunc = ida_hexrays.decompile(ea)
                 if cfunc:
@@ -344,8 +390,17 @@ class IDAExporter:
                     decompiled += 1
                 else:
                     failed += 1
+                    none_results += 1
+                    key = "decompile_returned_none"
+                    error_counts[key] = error_counts.get(key, 0) + 1
+                    if key not in error_order:
+                        error_order.append(key)
             except Exception as e:
                 failed += 1
+                key = f"{type(e).__name__}: {str(e)}"
+                error_counts[key] = error_counts.get(key, 0) + 1
+                if key not in error_order:
+                    error_order.append(key)
 
             last_ea = ea
             try:
@@ -375,10 +430,24 @@ class IDAExporter:
         if data:
             self.db.insert_pseudocode(data)
         self.timer.end_step("Pseudocode")
+
+        top_errors = []
+        for key in error_order:
+            if key in error_counts:
+                top_errors.append({"error": key, "count": int(error_counts[key])})
+            if len(top_errors) >= 5:
+                break
         return {
             "attempted": total_funcs,
             "decompiled": decompiled,
             "failed": failed,
+            "thunks": thunks,
+            "library": library,
+            "nofunc": nofunc,
+            "none": none_results,
+            "min_ea": min_ea,
+            "max_ea": max_ea,
+            "top_errors": top_errors,
             "hexrays_available": True,
         }
 
