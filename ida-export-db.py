@@ -15,6 +15,11 @@ from ida_exporter import IDAExporter
 
 # Try to import IDA modules
 try:
+    import idapro
+except ImportError:
+    idapro = None
+
+try:
     import ida_auto
     import ida_pro
     import ida_ida
@@ -47,6 +52,17 @@ def main():
     # Initialize helpers
     logger = ida_utils.Logger(verbose=args.verbose)
     timer = ida_utils.PerformanceTimer()
+
+    # Initialize IDA if needed
+    opened_db = False
+    if args.input_file and idapro:
+        logger.log(f"Initializing IDA for {args.input_file}...")
+        try:
+            idapro.open_database(args.input_file, run_auto_analysis=False)
+            opened_db = True
+        except Exception as e:
+            logger.log(f"Failed to open database: {e}")
+            sys.exit(1)
 
     logger.log("Starting export script...")
     
@@ -116,18 +132,11 @@ def main():
         import traceback
         traceback.print_exc()
     finally:
-        # Exit IDA if running in batch mode (headless) might be desired,
-        # but usually scripts shouldn't kill IDA unless explicitly asked.
-        # The original script had qexit(0). We'll do it if we are sure.
-        # For safety, we only qexit if we are in batch mode? 
-        # But we don't know for sure. 
-        # We will assume if arguments were provided (implying batch run), we might want to exit.
-        # But for "File > Script File", we don't want to close IDA.
-        # Let's verify if `idc.BATCH` is set or similar.
+        # Exit IDA if running in batch mode or if we opened the DB
         if ida_pro.qexit:
-             # Check if we are in batch mode
-             if idc.batch(0) == 1: # 0 checks, doesn't set
-                 logger.log("Batch mode detected. Exiting IDA.")
+             # Check if we are in batch mode or if we launched IDA ourselves
+             if opened_db or idc.batch(0) == 1:
+                 logger.log("Exiting IDA...")
                  ida_pro.qexit(0)
 
 if __name__ == "__main__":
