@@ -305,7 +305,7 @@ class IDAExporter:
             self.db.insert_strings(data)
         self.timer.end_step("Strings")
 
-    def export_pseudocode(self):
+    def export_pseudocode(self, function_list=None):
         self.timer.start_step("Pseudocode")
         if not ida_hexrays.init_hexrays_plugin():
             self.log("Hex-Rays decompiler not available, skipping pseudocode export.")
@@ -313,11 +313,19 @@ class IDAExporter:
             return
 
         self.log("Exporting pseudocode...")
-        total_funcs = ida_funcs.get_func_qty()
+        
+        funcs_to_process = []
+        if function_list:
+            funcs_to_process = function_list
+        else:
+            # Get all functions
+            funcs_to_process = [ea for ea in idautils.Functions()]
+            
+        total_funcs = len(funcs_to_process)
         tracker = ProgressTracker(total_funcs, self.log, "Pseudocode")
 
         data = []
-        for i, ea in enumerate(idautils.Functions()):
+        for i, ea in enumerate(funcs_to_process):
             tracker.update(i + 1)
             try:
                 cfunc = ida_hexrays.decompile(ea)
@@ -334,6 +342,13 @@ class IDAExporter:
         if data:
             self.db.insert_pseudocode(data)
         self.timer.end_step("Pseudocode")
+
+    def dump_function_list(self, output_path):
+        self.log(f"Dumping function list to {output_path}...")
+        funcs = [ea for ea in idautils.Functions()]
+        with open(output_path, 'w') as f:
+            json.dump(funcs, f)
+        self.log(f"Dumped {len(funcs)} functions.")
 
     def export_disasm_chunks(self):
         self.timer.start_step("DisasmChunks")

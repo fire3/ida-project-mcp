@@ -22,13 +22,13 @@ class Logger:
         self.logs.append(formatted_msg)
         
         # Always print to stdout for visibility
-        print(f"[BinaryDB] {msg}")
+        print(f"[IDA] {msg}")
         sys.stdout.flush()
         
         # Always log to IDA output window if possible
         if ida_kernwin:
             try:
-                ida_kernwin.msg(f"[BinaryDB] {msg}\n")
+                ida_kernwin.msg(f"[IDA] {msg}\n")
             except:
                 pass
 
