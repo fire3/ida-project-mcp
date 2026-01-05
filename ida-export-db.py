@@ -104,13 +104,12 @@ def main():
 
     # Handle Fast Analysis Setting
     if args.fast:
-        logger.log("Fast analysis mode enabled. Disabling heavy analysis steps...")
+        logger.log("Fast analysis mode enabled.")
         af = ida_ida.inf_get_af()
         # Disable AF_LVAR (0x20), AF_TRACE (0x2000), AF_FTAIL (0x10000)
         disable_mask = 0x20 | 0x2000 | 0x10000
         new_af = af & ~disable_mask
         ida_ida.inf_set_af(new_af)
-        logger.log(f"Analysis flags updated: {hex(af)} -> {hex(new_af)}")
 
     # Auto Analysis
     logger.log("Waiting for auto-analysis...")

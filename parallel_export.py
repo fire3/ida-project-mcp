@@ -8,17 +8,46 @@ import sqlite3
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-def run_command(cmd, verbose=False):
+def run_command(cmd, verbose=False, stream_output=False):
+    """
+    Runs a shell command.
+    verbose: If True, prints the command being run.
+    stream_output: If True, prints stdout line-by-line in real-time.
+    """
     if verbose:
         print(f"Running: {cmd}", flush=True)
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    if verbose and result.stdout:
-        print(f"STDOUT: {result.stdout}", flush=True)
-    if result.returncode != 0:
+        
+    start_time = time.time()
+    
+    if stream_output:
+        process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+        stdout_lines = []
+        while True:
+            line = process.stdout.readline()
+            if not line and process.poll() is not None:
+                break
+            if line:
+                print(line.rstrip(), flush=True)
+                stdout_lines.append(line)
+        
+        returncode = process.poll()
+        result_stdout = "".join(stdout_lines)
+        result_stderr = "" # Merged into stdout
+    else:
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        returncode = result.returncode
+        result_stdout = result.stdout
+        result_stderr = result.stderr
+        
+    duration = time.time() - start_time
+    
+    if returncode != 0:
         print(f"Error running command: {cmd}", flush=True)
-        print(f"STDOUT: {result.stdout}", flush=True)
-        print(f"STDERR: {result.stderr}", flush=True)
+        if not stream_output:
+            print(f"STDOUT: {result_stdout}", flush=True)
+        print(f"STDERR: {result_stderr}", flush=True)
         return False
+        
     return True
 
 def merge_databases(main_db, worker_dbs):
@@ -35,12 +64,12 @@ def merge_databases(main_db, worker_dbs):
     """)
     conn.commit()
     
+    count = 0
     for worker_db in worker_dbs:
         if not os.path.exists(worker_db):
             print(f"Warning: Worker DB {worker_db} not found.", flush=True)
             continue
             
-        print(f"Merging {worker_db}...", flush=True)
         try:
             # Attach worker DB
             cursor.execute(f"ATTACH DATABASE '{worker_db}' AS worker")
@@ -50,12 +79,44 @@ def merge_databases(main_db, worker_dbs):
             
             conn.commit()
             cursor.execute("DETACH DATABASE worker")
-            print("  Success", flush=True)
+            count += 1
         except Exception as e:
             print(f"Error merging {worker_db}: {e}", flush=True)
             
     conn.close()
-    print("Merge completed.", flush=True)
+    print(f"Merged {count} worker databases.", flush=True)
+
+def print_performance_summary(stats):
+    print("\n" + "="*60)
+    print(f"{'PARALLEL EXPORT PERFORMANCE SUMMARY':^60}")
+    print("="*60)
+    
+    total_time = stats['total_time']
+    master_time = stats['master_time']
+    worker_time = stats['worker_time']
+    merge_time = stats['merge_time']
+    total_funcs = stats['total_funcs']
+    workers = stats['workers']
+    
+    print(f"{'Total Time':<30} : {total_time:.2f}s")
+    print(f"{'  - Analysis (Master)':<30} : {master_time:.2f}s")
+    print(f"{'  - Export (Workers)':<30} : {worker_time:.2f}s")
+    print(f"{'  - Merge':<30} : {merge_time:.2f}s")
+    print("-" * 60)
+    print(f"{'Total Functions':<30} : {total_funcs}")
+    print(f"{'Worker Threads':<30} : {workers}")
+    
+    avg_speed = 0
+    if total_time > 0:
+        avg_speed = total_funcs / total_time
+        
+    worker_speed = 0
+    if worker_time > 0:
+        worker_speed = total_funcs / worker_time
+
+    print(f"{'Overall Speed':<30} : {avg_speed:.2f} funcs/sec")
+    print(f"{'Worker Export Speed':<30} : {worker_speed:.2f} funcs/sec")
+    print("="*60 + "\n")
 
 def main():
     parser = argparse.ArgumentParser(description="Parallel IDA Pro Export")
@@ -63,6 +124,7 @@ def main():
     parser.add_argument("-j", "--workers", type=int, default=4, help="Number of parallel workers (default: 4)")
     parser.add_argument("-o", "--output", help="Path to output SQLite database")
     parser.add_argument("--fast", action="store_true", help="Enable fast analysis mode")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose output for workers")
     
     args = parser.parse_args()
     
@@ -86,17 +148,31 @@ def main():
         shutil.rmtree(temp_dir)
     os.makedirs(temp_dir)
     
+    stats = {
+        'start_time': time.time(),
+        'workers': args.workers,
+        'total_funcs': 0
+    }
+    
     try:
         # Step 1: Run Master (Export Metadata + Dump Functions)
         print("\n[Step 1/4] Running Master (Analysis & Metadata)...")
+        master_start = time.time()
+        
         funcs_json = os.path.join(temp_dir, "funcs.json")
         master_cmd = f"python ida-export-db.py \"{input_path}\" --output \"{output_db}\" --parallel-master --dump-funcs \"{funcs_json}\""
         if args.fast:
             master_cmd += " --fast"
             
-        if not run_command(master_cmd, verbose=True):
+        # We generally want to see master output to know analysis is progressing
+        # But user wants less "useless" logs. 
+        # If we hide it, user sees nothing during analysis.
+        # Let's show it but rely on ida-export-db.py being cleaner.
+        if not run_command(master_cmd, verbose=False, stream_output=True):
             print("Master step failed. Aborting.")
             return
+            
+        stats['master_time'] = time.time() - master_start
             
         if not os.path.exists(funcs_json):
             print("Error: Function list was not generated.")
@@ -108,6 +184,7 @@ def main():
             all_funcs = json.load(f)
             
         total_funcs = len(all_funcs)
+        stats['total_funcs'] = total_funcs
         print(f"Total functions: {total_funcs}")
         
         if total_funcs == 0:
@@ -127,6 +204,7 @@ def main():
             
         # Step 3: Run Workers
         print(f"\n[Step 3/4] Launching {len(worker_files)} workers...")
+        worker_start = time.time()
         
         # We need to be careful with IDB locking.
         # Strategy: Copy the `.i64` or `.idb` file (created by master) to temp dir for each worker.
@@ -151,9 +229,9 @@ def main():
                 ext = os.path.splitext(existing_idb)[1]
                 worker_idb = os.path.join(temp_dir, f"worker_{i}{ext}")
                 try:
-                    shutil.copy2(existing_idb, worker_idb)
+                    if not os.path.exists(worker_idb):
+                        shutil.copy2(existing_idb, worker_idb)
                     worker_input = worker_idb
-                    # print(f"Worker {i} using IDB copy: {worker_input}")
                 except Exception as e:
                     print(f"Failed to copy IDB for worker {i}: {e}. Using original input.")
 
@@ -162,26 +240,41 @@ def main():
                 cmd += " --fast"
             worker_cmds.append(cmd)
 
+        # Run workers
+        # For workers, we set verbose=True so we see the command, but stream_output=False
+        # to avoid spamming stdout with interleaved logs.
         with ThreadPoolExecutor(max_workers=args.workers) as executor:
-            futures = [executor.submit(run_command, cmd, True) for cmd in worker_cmds]
+            futures = [executor.submit(run_command, cmd, False, False) for cmd in worker_cmds]
             results = [f.result() for f in futures]
+            
+        stats['worker_time'] = time.time() - worker_start
             
         if not all(results):
             print("Some workers failed.")
             
         # Step 4: Merge Results
         print("\n[Step 4/4] Merging results...")
+        merge_start = time.time()
+        
         worker_dbs = [w_db for _, w_db in worker_files]
         merge_databases(output_db, worker_dbs)
         
+        stats['merge_time'] = time.time() - merge_start
+        stats['total_time'] = time.time() - stats['start_time']
+        
         print(f"\nSuccess! Full export saved to {output_db}")
+        
+        # Print Performance Summary
+        print_performance_summary(stats)
         
     finally:
         # Cleanup
         print("Cleaning up temporary files...")
-        # shutil.rmtree(temp_dir) # Keep for debugging if needed, or uncomment
-        # For now, let's keep it safe and not delete immediately if user wants to inspect
-        pass
+        try:
+             # shutil.rmtree(temp_dir) 
+             pass
+        except:
+             pass
 
 if __name__ == "__main__":
     main()
