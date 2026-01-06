@@ -97,17 +97,36 @@ class McpToolRegistry:
             raise LookupError("binary_not_found")
         return b
 
+    def _maybe_parse_json(self, value):
+        if not isinstance(value, str):
+            return value
+        s = value.strip()
+        if not s:
+            return value
+        if (s.startswith("[") and s.endswith("]")) or (s.startswith("{") and s.endswith("}")):
+            try:
+                return json.loads(s)
+            except Exception:
+                return value
+        return value
+
+    def _coerce_json_list(self, value):
+        v = self._maybe_parse_json(value)
+        if isinstance(v, tuple):
+            return list(v)
+        return v
+
     def _build_tools(self):
         return [
             {
                 "name": "get_project_overview",
-                "description": "获取项目概览（包含二进制数量、索引状态、后端类型等）。",
+                "description": "Args: none. Returns: {project:string, binaries_count:int, backend:string, capabilities:object}. Notes: capabilities is an aggregated view across binaries and may be a subset.",
                 "inputSchema": {"type": "object", "properties": {"project": {"type": "string"}}, "additionalProperties": True},
                 "handler": lambda args: _ok(self.project_store.get_overview()),
             },
             {
                 "name": "get_project_binaries",
-                "description": "获取项目中的二进制文件列表（默认仅返回 binary name，便于作为其它接口的 binary 参数）。",
+                "description": "Args: offset(int>=0), limit(int 1..500), detail(bool), filters(object). Returns: by default an array of {binary:string} where binary is the recommended identifier for other tools. If detail=true, returns extended records including binary_id, db_path, and best-effort metadata.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -127,31 +146,31 @@ class McpToolRegistry:
             },
             {
                 "name": "get_binary_metadata",
-                "description": "获取指定二进制的元数据。",
+                "description": "Args: binary(string). Returns: metadata object (best-effort), commonly including format, processor/arch, address width, hashes, image base, and entry points when available.",
                 "inputSchema": {"type": "object", "properties": {"binary": {"type": "string"}}, "required": ["binary"]},
                 "handler": lambda args: _ok(self._binary(args).get_metadata_dict()),
             },
             {
                 "name": "get_backend_capabilities",
-                "description": "返回当前后端可用能力与限制。",
+                "description": "Args: binary(string, optional). Returns: capability map (boolean flags) describing which features are available (e.g., decompile, disassemble, xrefs, callgraph, bytes, aob_search).",
                 "inputSchema": {"type": "object", "properties": {"project": {"type": "string"}, "binary": {"type": "string"}}},
                 "handler": self._tool_get_backend_capabilities,
             },
             {
                 "name": "list_binary_sections",
-                "description": "获取节区（section）列表与属性。",
+                "description": "Args: binary(string). Returns: array of section objects (best-effort). Error: may be empty if the backend does not provide sections.",
                 "inputSchema": {"type": "object", "properties": {"binary": {"type": "string"}}, "required": ["binary"]},
                 "handler": lambda args: _ok(self._binary(args).list_sections()),
             },
             {
                 "name": "list_binary_segments",
-                "description": "获取段（segment）列表与属性。",
+                "description": "Args: binary(string). Returns: array of segment objects with start/end VA and permissions. Notes: used by byte-reading and address mapping.",
                 "inputSchema": {"type": "object", "properties": {"binary": {"type": "string"}}, "required": ["binary"]},
                 "handler": lambda args: _ok(self._binary(args).list_segments()),
             },
             {
                 "name": "list_binary_imports",
-                "description": "获取导入表（含导入库、符号、IAT/PLT 地址等）。",
+                "description": "Args: binary(string), offset(int>=0, optional), limit(int, optional). Returns: array of imports (library, name, ordinal, address, thunk_address).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {"binary": {"type": "string"}, "offset": {"type": "integer"}, "limit": {"type": "integer"}},
@@ -161,7 +180,7 @@ class McpToolRegistry:
             },
             {
                 "name": "list_binary_exports",
-                "description": "获取导出表（函数/变量）。",
+                "description": "Args: binary(string), offset(int>=0, optional), limit(int, optional). Returns: array of exports (name, ordinal, address, forwarder).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {"binary": {"type": "string"}, "offset": {"type": "integer"}, "limit": {"type": "integer"}},
@@ -171,7 +190,7 @@ class McpToolRegistry:
             },
             {
                 "name": "list_binary_symbols",
-                "description": "获取符号（含本地/全局/调试符号，按后端能力）。",
+                "description": "Args: binary(string), query(string, optional), offset(int>=0, optional), limit(int, optional). Returns: array of symbol entries (name, demangled_name, kind, address, size; fields are best-effort).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -186,7 +205,7 @@ class McpToolRegistry:
             },
             {
                 "name": "resolve_address",
-                "description": "将地址解析为所在函数/符号/段节/字符串/指令等上下文。",
+                "description": "Args: binary(string), address(string|int). Returns: an object describing the address context (function, symbol, segment, section, string_ref, data_item) plus is_code/is_data booleans.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {"binary": {"type": "string"}, "address": {"type": "string"}},
@@ -196,7 +215,7 @@ class McpToolRegistry:
             },
             {
                 "name": "get_binary_bytes",
-                "description": "读取指定虚地址处的原始字节，并格式化二进制数据。",
+                "description": "Args: binary(string), address(string|int), length(int), format_type(string, optional). Returns: formatted byte dump text. Errors: UNSUPPORTED if the on-disk binary is not available; NOT_FOUND if address is unmapped; INVALID_ARGUMENT for bad parameters.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -211,7 +230,7 @@ class McpToolRegistry:
             },
             {
                 "name": "get_binary_decoded_data",
-                "description": "获取某地址处的结构化数据信息。",
+                "description": "Args: binary(string), address(string|int), length(int). Returns: decoded data description object (best-effort).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {"binary": {"type": "string"}, "address": {"type": "string"}, "length": {"type": "integer"}},
@@ -221,7 +240,7 @@ class McpToolRegistry:
             },
             {
                 "name": "get_binary_disassembly_text",
-                "description": "获取指定地址范围的反汇编结果。",
+                "description": "Args: binary(string), start_address(string|int), end_address(string|int). Returns: plain text disassembly for the requested range (best-effort).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -237,7 +256,7 @@ class McpToolRegistry:
             },
             {
                 "name": "get_binary_function_disassembly_text",
-                "description": "获取指定函数的反汇编结果。",
+                "description": "Args: binary(string), function_address(string|int). Returns: plain text disassembly for the function containing function_address (best-effort).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {"binary": {"type": "string"}, "function_address": {"type": "string"}},
@@ -247,7 +266,7 @@ class McpToolRegistry:
             },
             {
                 "name": "get_binary_functions",
-                "description": "列出二进制中的函数（可筛选/搜索）。",
+                "description": "Args: binary(string), query(string, optional), offset(int>=0, optional), limit(int, optional), filters(object, optional). Returns: array of function summaries with addresses/ranges/sizes and flags (is_thunk/is_library).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -265,33 +284,54 @@ class McpToolRegistry:
             },
             {
                 "name": "get_binary_function_by_name",
-                "description": "根据名称查找函数。",
+                "description": "Args: binary(string), names(string|array<string>), match(string, optional). names may also be a JSON-encoded array string. match: exact|prefix|contains|regex. Returns: array of matching functions with name, demangled_name, address, start_address, end_address, size.",
                 "inputSchema": {
                     "type": "object",
-                    "properties": {"binary": {"type": "string"}, "names": {}, "match": {"type": "string"}},
+                    "properties": {
+                        "binary": {"type": "string"},
+                        "names": {"type": ["array", "string"], "items": {"type": "string"}},
+                        "match": {"type": "string"},
+                    },
                     "required": ["binary", "names"],
                 },
-                "handler": lambda args: _ok(self._binary(args).get_functions_by_name(args.get("names"), args.get("match"))),
+                "handler": lambda args: _ok(
+                    self._binary(args).get_functions_by_name(self._coerce_json_list(args.get("names")), args.get("match"))
+                ),
             },
             {
                 "name": "get_binary_function_by_address",
-                "description": "根据地址查找所属函数。",
-                "inputSchema": {"type": "object", "properties": {"binary": {"type": "string"}, "addresses": {}}, "required": ["binary", "addresses"]},
-                "handler": lambda args: _ok(self._binary(args).get_functions_by_address(args.get("addresses"))),
+                "description": "Args: binary(string), addresses(string|int|array). addresses may also be a JSON-encoded array string. Returns: array of function objects containing the given addresses (best-effort).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "binary": {"type": "string"},
+                        "addresses": {"type": ["array", "string", "integer"], "items": {}},
+                    },
+                    "required": ["binary", "addresses"],
+                },
+                "handler": lambda args: _ok(
+                    self._binary(args).get_functions_by_address(self._coerce_json_list(args.get("addresses")))
+                ),
             },
             {
                 "name": "get_binary_function_pseudo_code_by_address",
-                "description": "获取指定函数的反编译伪代码。",
+                "description": "Args: binary(string), addresses(string|int|array), options(object, optional). addresses may also be a JSON-encoded array string. Returns: array of {address,function,pseudocode,...} objects when decompiler output exists; otherwise may return an empty array.",
                 "inputSchema": {
                     "type": "object",
-                    "properties": {"binary": {"type": "string"}, "addresses": {}, "options": {"type": "object"}},
+                    "properties": {
+                        "binary": {"type": "string"},
+                        "addresses": {"type": ["array", "string", "integer"], "items": {}},
+                        "options": {"type": "object"},
+                    },
                     "required": ["binary", "addresses"],
                 },
-                "handler": lambda args: _ok(self._binary(args).get_pseudocode_by_address(args.get("addresses"), args.get("options"))),
+                "handler": lambda args: _ok(
+                    self._binary(args).get_pseudocode_by_address(self._coerce_json_list(args.get("addresses")), args.get("options"))
+                ),
             },
             {
                 "name": "get_binary_function_callees",
-                "description": "获取指定函数调用的被调用者（callee）。",
+                "description": "Args: binary(string), function_address(string|int), depth(int, optional), limit(int, optional). Returns: array of callees/call edges (best-effort).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {"binary": {"type": "string"}, "function_address": {"type": "string"}, "depth": {"type": "integer"}, "limit": {"type": "integer"}},
@@ -303,7 +343,7 @@ class McpToolRegistry:
             },
             {
                 "name": "get_binary_function_callers",
-                "description": "获取调用指定函数的调用者（caller）。",
+                "description": "Args: binary(string), function_address(string|int), depth(int, optional), limit(int, optional). Returns: array of callers/call edges (best-effort).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {"binary": {"type": "string"}, "function_address": {"type": "string"}, "depth": {"type": "integer"}, "limit": {"type": "integer"}},
@@ -315,7 +355,7 @@ class McpToolRegistry:
             },
             {
                 "name": "get_binary_cross_references_to_address",
-                "description": "获取对指定地址的交叉引用（Xref To）。",
+                "description": "Args: binary(string), address(string|int), offset(int>=0, optional), limit(int, optional), filters(object, optional). Returns: array of xref entries (best-effort).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -333,7 +373,7 @@ class McpToolRegistry:
             },
             {
                 "name": "get_binary_cross_references_from_address",
-                "description": "获取从指定地址发出的交叉引用（Xref From）。",
+                "description": "Args: binary(string), address(string|int), offset(int>=0, optional), limit(int, optional). Returns: array of xref entries (best-effort).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {"binary": {"type": "string"}, "address": {"type": "string"}, "offset": {"type": "integer"}, "limit": {"type": "integer"}},
@@ -345,14 +385,14 @@ class McpToolRegistry:
             },
             {
                 "name": "list_binary_strings",
-                "description": "枚举二进制中的字符串。",
+                "description": "Args: binary(string), query(string, optional), min_length(int, optional), encodings(string|array<string>, optional), offset(int>=0, optional), limit(int, optional). Returns: array of string records (address, encoding, length, string, section_name when available).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "binary": {"type": "string"},
                         "query": {"type": "string"},
                         "min_length": {"type": "integer"},
-                        "encodings": {},
+                        "encodings": {"type": ["array", "string"], "items": {"type": "string"}},
                         "offset": {"type": "integer"},
                         "limit": {"type": "integer"},
                     },
@@ -362,7 +402,7 @@ class McpToolRegistry:
                     self._binary(args).list_strings(
                         args.get("query"),
                         args.get("min_length"),
-                        args.get("encodings"),
+                        self._coerce_json_list(args.get("encodings")),
                         args.get("offset"),
                         args.get("limit"),
                     )
@@ -370,7 +410,7 @@ class McpToolRegistry:
             },
             {
                 "name": "get_string_xrefs",
-                "description": "获取对某字符串地址的引用。",
+                "description": "Args: binary(string), string_address(string|int), offset(int>=0, optional), limit(int, optional). Returns: array of xref entries referencing the string address (best-effort).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {"binary": {"type": "string"}, "string_address": {"type": "string"}, "offset": {"type": "integer"}, "limit": {"type": "integer"}},
@@ -380,7 +420,7 @@ class McpToolRegistry:
             },
             {
                 "name": "search_string_symbol_in_binary",
-                "description": "在二进制中查找指定字符串。",
+                "description": "Args: binary(string), search_string(string), match(string, optional). match: contains|exact|regex. Returns: array of string records matching the search criteria (best-effort).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {"binary": {"type": "string"}, "search_string": {"type": "string"}, "match": {"type": "string"}},
@@ -390,7 +430,7 @@ class McpToolRegistry:
             },
             {
                 "name": "search_immediates_in_binary",
-                "description": "搜索立即数/常量在代码中的使用位置。",
+                "description": "Args: binary(string), value(any), width(int, optional), offset(int>=0, optional), limit(int, optional). Returns: array of hits where the immediate value is used (best-effort).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {"binary": {"type": "string"}, "value": {}, "width": {"type": "integer"}, "offset": {"type": "integer"}, "limit": {"type": "integer"}},
@@ -402,7 +442,7 @@ class McpToolRegistry:
             },
             {
                 "name": "search_bytes_pattern_in_binary",
-                "description": "AOB/字节模式搜索（支持通配符）。",
+                "description": "Args: binary(string), pattern(string), offset(int>=0, optional), limit(int, optional). pattern example: \"48 8B ?? ?? 89\". Returns: array of hit records/addresses (best-effort). Errors: INVALID_ARGUMENT for malformed patterns; UNSUPPORTED if binary bytes are not available.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {"binary": {"type": "string"}, "pattern": {"type": "string"}, "offset": {"type": "integer"}, "limit": {"type": "integer"}},
@@ -412,7 +452,7 @@ class McpToolRegistry:
             },
             {
                 "name": "search_string_symbol_in_project",
-                "description": "在项目中查找所有包含指定字符串的二进制与位置。",
+                "description": "Args: search_string(string), match(string, optional), offset(int>=0, optional), limit(int, optional). match: contains|exact|regex. Returns: array of hits including {binary:string, ...string_record}.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {"search_string": {"type": "string"}, "match": {"type": "string"}, "offset": {"type": "integer"}, "limit": {"type": "integer"}},
@@ -422,7 +462,7 @@ class McpToolRegistry:
             },
             {
                 "name": "search_exported_function_in_project",
-                "description": "在项目中查找导出指定函数名称的二进制。",
+                "description": "Args: function_name(string), match(string, optional), offset(int>=0, optional), limit(int, optional). match: exact|contains|regex. Returns: array of hits including {binary:string, export:object}.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {"function_name": {"type": "string"}, "match": {"type": "string"}, "offset": {"type": "integer"}, "limit": {"type": "integer"}},
@@ -432,7 +472,7 @@ class McpToolRegistry:
             },
             {
                 "name": "search_similar_functions_in_project",
-                "description": "按函数特征相似度在项目内检索（需要索引能力）。",
+                "description": "Args: binary(string), function_address(string|int), top_k(int, optional), threshold(number, optional). Returns: UNSUPPORTED (no similarity index available in this backend).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {"binary": {"type": "string"}, "function_address": {"type": "string"}, "top_k": {"type": "integer"}, "threshold": {"type": "number"}},
@@ -508,7 +548,7 @@ class McpToolRegistry:
             else:
                 hits = b.list_strings(query=s, offset=0, limit=500)
             for h in hits:
-                all_hits.append({"binary": b.binary_id, **h})
+                all_hits.append({"binary": b.display_name, **h})
         return _ok(all_hits[offset : offset + limit])
 
     def _tool_search_export_in_project(self, args):
@@ -532,7 +572,7 @@ class McpToolRegistry:
                     except Exception:
                         ok = False
                 if ok:
-                    hits.append({"binary": b.binary_id, "export": ex})
+                    hits.append({"binary": b.display_name, "export": ex})
         return _ok(hits[offset : offset + limit])
 
 
