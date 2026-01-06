@@ -10,6 +10,7 @@ class ProjectStore:
         self.project_id = os.path.basename(self.project_path.rstrip("\\/")) or "default"
         self._binaries = {}
         self._binary_order = []
+        self._aliases = {}
         self._load()
 
     def close(self):
@@ -82,9 +83,30 @@ class ProjectStore:
             return
         self._binaries[binary_id] = q
         self._binary_order.append(binary_id)
+        self._add_alias(q.display_name, binary_id)
+        self._add_alias(os.path.basename(db_path), binary_id)
+        if q.binary_path:
+            self._add_alias(os.path.basename(q.binary_path), binary_id)
+
+    def _add_alias(self, alias, binary_id):
+        if not alias:
+            return
+        key = str(alias)
+        self._aliases.setdefault(key, set()).add(binary_id)
+        self._aliases.setdefault(key.lower(), set()).add(binary_id)
 
     def get_binary(self, binary_id):
-        return self._binaries.get(binary_id)
+        if binary_id is None:
+            return None
+        key = str(binary_id)
+        b = self._binaries.get(key)
+        if b is not None:
+            return b
+        candidates = self._aliases.get(key) or self._aliases.get(key.lower())
+        if not candidates or len(candidates) != 1:
+            return None
+        cid = next(iter(candidates))
+        return self._binaries.get(cid)
 
     def list_binaries(self):
         return [self._binaries[i] for i in self._binary_order if i in self._binaries]
@@ -104,29 +126,12 @@ class ProjectStore:
             "capabilities": caps,
         }
 
-    def get_project_binaries(self, offset=None, limit=None, filters=None):
+    def get_project_binaries(self, offset=None, limit=None, filters=None, detail=False):
         offset = 0 if offset is None else max(0, int(offset))
         limit = 50 if limit is None else min(500, max(1, int(limit)))
         filters = filters or {}
         out = []
         for b in self.list_binaries():
-            meta = {}
-            try:
-                meta = b.get_metadata_dict()
-            except Exception:
-                meta = {}
-            entry = {
-                "binary": b.binary_id,
-                "display_name": b.display_name,
-                "path": b.binary_path,
-                "db_path": b.db_path,
-                "format": meta.get("format"),
-                "arch": meta.get("processor"),
-                "bits": meta.get("address_width"),
-                "hashes": {"sha256": meta.get("sha256"), "md5": meta.get("md5"), "crc32": meta.get("crc32")},
-                "image_base": meta.get("image_base"),
-                "entry_points": [],
-            }
             if "has_symbols" in filters and filters["has_symbols"] is not None:
                 try:
                     sym_count = b._count("SELECT COUNT(1) FROM symbols") if b._table_exists("symbols") else 0
@@ -134,6 +139,27 @@ class ProjectStore:
                     sym_count = 0
                 if bool(sym_count > 0) != bool(filters["has_symbols"]):
                     continue
-            out.append(entry)
+            if not detail:
+                out.append({"binary": b.display_name})
+                continue
+            meta = {}
+            try:
+                meta = b.get_metadata_dict()
+            except Exception:
+                meta = {}
+            out.append(
+                {
+                    "binary": b.display_name,
+                    "binary_id": b.binary_id,
+                    "display_name": b.display_name,
+                    "path": b.binary_path,
+                    "db_path": b.db_path,
+                    "format": meta.get("format"),
+                    "arch": meta.get("processor"),
+                    "bits": meta.get("address_width"),
+                    "hashes": {"sha256": meta.get("sha256"), "md5": meta.get("md5"), "crc32": meta.get("crc32")},
+                    "image_base": meta.get("image_base"),
+                    "entry_points": [],
+                }
+            )
         return out[offset : offset + limit]
-

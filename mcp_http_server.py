@@ -107,7 +107,7 @@ class McpToolRegistry:
             },
             {
                 "name": "get_project_binaries",
-                "description": "获取项目中的所有二进制文件。",
+                "description": "获取项目中的二进制文件列表（默认仅返回 binary name，便于作为其它接口的 binary 参数）。",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -115,11 +115,14 @@ class McpToolRegistry:
                         "offset": {"type": "integer", "minimum": 0},
                         "limit": {"type": "integer", "minimum": 1, "maximum": 500},
                         "filters": {"type": "object"},
+                        "detail": {"type": "boolean"},
                     },
                     "additionalProperties": True,
                 },
                 "handler": lambda args: _ok(
-                    self.project_store.get_project_binaries(args.get("offset"), args.get("limit"), args.get("filters"))
+                    self.project_store.get_project_binaries(
+                        args.get("offset"), args.get("limit"), args.get("filters"), args.get("detail")
+                    )
                 ),
             },
             {
