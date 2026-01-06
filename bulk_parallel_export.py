@@ -6,6 +6,7 @@ import hashlib
 import argparse
 import subprocess
 import threading
+import shutil
 from dataclasses import dataclass
 from queue import Queue, Empty
 
@@ -281,8 +282,26 @@ def _stream_subprocess(cmd, cwd, on_line):
 
 def run_parallel_export(project_root, target_path, output_db, workers, on_line):
     parallel_path = os.path.join(project_root, "parallel_export.py")
-    cmd = f"python \"{parallel_path}\" \"{target_path}\" -j {int(workers)} -o \"{output_db}\""
+    cmd = f"python \"{parallel_path}\" \"{target_path}\" -j {int(workers)} -o \"{output_db}\" --save-idb \"{target_path}\""
     return _stream_subprocess(cmd, cwd=project_root, on_line=on_line)
+
+
+def _copy_to_out_dir(src_path, out_dir):
+    src_path = os.path.abspath(src_path)
+    out_dir = os.path.abspath(out_dir)
+    dst_path = os.path.join(out_dir, os.path.basename(src_path))
+    if os.path.abspath(dst_path) == src_path:
+        return dst_path
+    shutil.copy2(src_path, dst_path)
+    return dst_path
+
+
+def _detect_idb_path(binary_path):
+    for ext in (".i64", ".idb"):
+        p = binary_path + ext
+        if os.path.exists(p):
+            return p
+    return None
 
 
 def export_bundle(scan_dir, out_dir, target_path, workers, on_line):
@@ -326,19 +345,35 @@ def export_bundle(scan_dir, out_dir, target_path, workers, on_line):
                 index["dependencies"].append({"name": item["name"], "path": None, "db": None, "status": "missing"})
             continue
 
-        name = os.path.basename(item["path"])
-        db_name = f"{name}.{_sha256_prefix(item['path'])}.db"
+        src_path = os.path.abspath(item["path"])
+        name = os.path.basename(src_path)
+        out_bin = _copy_to_out_dir(src_path, out_dir)
+        on_line(f"[BUNDLE {_now_ts()}] copy {name} -> {out_bin}")
+
+        db_name = f"{name}.{_sha256_prefix(src_path)}.db"
         out_db = os.path.join(out_dir, db_name)
         on_line(f"[BUNDLE {_now_ts()}] exporting {name} -> {out_db}")
-        rc = run_parallel_export(project_root, item["path"], out_db, workers, on_line)
+        rc = run_parallel_export(project_root, out_bin, out_db, workers, on_line)
         status = "ok" if rc == 0 else f"failed_exit_{rc}"
+        out_idb = _detect_idb_path(out_bin) if status == "ok" else None
 
-        record = {"role": item["role"], "name": item["name"], "path": item["path"], "db": out_db, "status": status}
+        record = {
+            "role": item["role"],
+            "name": item["name"],
+            "source_path": src_path,
+            "path": out_bin,
+            "db": out_db,
+            "idb": out_idb,
+            "status": status,
+        }
         index["exports"].append(record)
         if item["role"] == "main":
             index["target"]["db"] = out_db
+            index["target"]["source_path"] = src_path
+            index["target"]["path"] = out_bin
+            index["target"]["idb"] = out_idb
         else:
-            index["dependencies"].append({"name": item["name"], "path": item["path"], "db": out_db, "status": status})
+            index["dependencies"].append({"name": item["name"], "source_path": src_path, "path": out_bin, "db": out_db, "idb": out_idb, "status": status})
 
     index_path = os.path.join(out_dir, "export_index.json")
     with open(index_path, "w", encoding="utf-8") as f:

@@ -224,6 +224,7 @@ def main():
     parser.add_argument("input_file", help="Path to input binary file")
     parser.add_argument("-j", "--workers", type=int, default=4, help="Number of parallel workers (default: 4)")
     parser.add_argument("-o", "--output", help="Path to output SQLite database")
+    parser.add_argument("--save-idb", help="Save analyzed IDB/I64 base path (no .i64/.idb suffix)")
     parser.add_argument("--fast", action="store_true", help="Enable fast analysis mode")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output for workers")
     
@@ -274,6 +275,11 @@ def main():
         
         funcs_json = os.path.join(temp_dir, "funcs.json")
         analysis_base = os.path.join(temp_dir, "analysis")
+        if args.save_idb:
+            analysis_base = os.path.abspath(args.save_idb)
+            low = analysis_base.lower()
+            if low.endswith(".i64") or low.endswith(".idb"):
+                analysis_base = os.path.splitext(analysis_base)[0]
         master_perf_json = os.path.join(temp_dir, "perf_master.json")
         master_input = existing_idb or input_path
         master_cmd = f"python ida-export-db.py \"{master_input}\" --output \"{output_db}\" --parallel-master --dump-funcs \"{funcs_json}\" --save-idb \"{analysis_base}\" --perf-json \"{master_perf_json}\" --no-perf-report"
