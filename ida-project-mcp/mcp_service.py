@@ -156,19 +156,6 @@ class McpService:
         """
         return self._get_binary(binary_name).get_metadata_dict()
 
-    @mcp_tool(name="get_backend_capabilities")
-    def get_backend_capabilities(self, binary_name: str = None) -> Dict[str, bool]:
-        """Get capabilities of the backend or a specific binary.
-
-        Args:
-            binary_name: Binary name (string, optional). If provided, returns capabilities for that binary.
-        Returns:
-            dict: Capabilities dictionary where keys are capability names and values are booleans.
-        """
-        if binary_name:
-            return self._get_binary(binary_name).get_capabilities()
-        return self.project_store.get_overview().get("capabilities") or {}
-
     @mcp_tool(name="list_binary_sections")
     def list_binary_sections(self, binary_name: str) -> List[Dict[str, Any]]:
         """List sections in the binary.
@@ -302,8 +289,8 @@ class McpService:
         """
         return self._get_binary(binary_name).get_function_disassembly_text(function_address)
 
-    @mcp_tool(name="get_binary_functions")
-    def get_binary_functions(self, binary_name: str, query: str = None, offset: int = 0, limit: int = 50, filters: dict = None) -> List[Dict[str, Any]]:
+    @mcp_tool(name="list_binary_functions")
+    def list_binary_functions(self, binary_name: str, query: str = None, offset: int = 0, limit: int = 50, filters: dict = None) -> List[Dict[str, Any]]:
         """List functions in the binary.
 
         Args:
