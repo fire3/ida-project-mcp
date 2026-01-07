@@ -619,6 +619,10 @@ class McpService:
 
     def _coerce_json_list(self, value):
         v = self._maybe_parse_json(value)
+        if isinstance(v, list):
+            return v
         if isinstance(v, tuple):
             return list(v)
+        if isinstance(v, str) and "," in v:
+            return [x.strip() for x in v.split(",") if x.strip()]
         return v
