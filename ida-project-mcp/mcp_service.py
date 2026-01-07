@@ -112,12 +112,12 @@ class McpService:
             return method(*bound_args.args, **bound_args.kwargs)
         return handler
 
-    def _get_binary(self, binary_id: str):
-        if not binary_id:
-            raise KeyError("binary_required")
-        b = self.project_store.get_binary(binary_id)
+    def _get_binary(self, binary_name: str):
+        if not binary_name:
+            raise KeyError("binary_name_required")
+        b = self.project_store.get_binary(binary_name)
         if not b:
-            raise LookupError(f"binary_not_found: {binary_id}")
+            raise LookupError(f"binary_not_found: {binary_name}")
         return b
 
     # --- Tool Definitions ---
@@ -146,109 +146,109 @@ class McpService:
         return self.project_store.get_project_binaries(offset, limit, filters, detail)
 
     @mcp_tool(name="get_binary_metadata")
-    def get_binary_metadata(self, binary: str) -> Dict[str, Any]:
+    def get_binary_metadata(self, binary_name: str) -> Dict[str, Any]:
         """Get metadata for a specific binary.
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
         Returns:
             dict: Metadata of the binary including architecture, file type, etc.
         """
-        return self._get_binary(binary).get_metadata_dict()
+        return self._get_binary(binary_name).get_metadata_dict()
 
     @mcp_tool(name="get_backend_capabilities")
-    def get_backend_capabilities(self, binary: str = None) -> Dict[str, bool]:
+    def get_backend_capabilities(self, binary_name: str = None) -> Dict[str, bool]:
         """Get capabilities of the backend or a specific binary.
 
         Args:
-            binary: Binary identifier (string, optional). If provided, returns capabilities for that binary.
+            binary_name: Binary name (string, optional). If provided, returns capabilities for that binary.
         Returns:
             dict: Capabilities dictionary where keys are capability names and values are booleans.
         """
-        if binary:
-            return self._get_binary(binary).get_capabilities()
+        if binary_name:
+            return self._get_binary(binary_name).get_capabilities()
         return self.project_store.get_overview().get("capabilities") or {}
 
     @mcp_tool(name="list_binary_sections")
-    def list_binary_sections(self, binary: str) -> List[Dict[str, Any]]:
+    def list_binary_sections(self, binary_name: str) -> List[Dict[str, Any]]:
         """List sections in the binary.
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
         Returns:
             list: List of dictionaries, each representing a section (name, start_address, size, etc.).
         """
-        return self._get_binary(binary).list_sections()
+        return self._get_binary(binary_name).list_sections()
 
     @mcp_tool(name="list_binary_segments")
-    def list_binary_segments(self, binary: str) -> List[Dict[str, Any]]:
+    def list_binary_segments(self, binary_name: str) -> List[Dict[str, Any]]:
         """List segments in the binary.
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
         Returns:
             list: List of dictionaries, each representing a segment (name, start_address, size, permissions).
         """
-        return self._get_binary(binary).list_segments()
+        return self._get_binary(binary_name).list_segments()
 
     @mcp_tool(name="list_binary_imports")
-    def list_binary_imports(self, binary: str, offset: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
+    def list_binary_imports(self, binary_name: str, offset: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
         """List imports in the binary.
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
             offset: Start index for pagination (default: 0).
             limit: Maximum number of imports to return (default: 50).
         Returns:
             list: List of dictionaries, each representing an imported function or symbol.
         """
-        return self._get_binary(binary).list_imports(offset, limit)
+        return self._get_binary(binary_name).list_imports(offset, limit)
 
     @mcp_tool(name="list_binary_exports")
-    def list_binary_exports(self, binary: str, offset: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
+    def list_binary_exports(self, binary_name: str, offset: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
         """List exports in the binary.
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
             offset: Start index for pagination (default: 0).
             limit: Maximum number of exports to return (default: 50).
         Returns:
             list: List of dictionaries, each representing an exported function or symbol.
         """
-        return self._get_binary(binary).list_exports(offset, limit)
+        return self._get_binary(binary_name).list_exports(offset, limit)
 
     @mcp_tool(name="list_binary_symbols")
-    def list_binary_symbols(self, binary: str, query: str = None, offset: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
+    def list_binary_symbols(self, binary_name: str, query: str = None, offset: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
         """List symbols in the binary.
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
             query: Search query string (optional).
             offset: Start index for pagination (default: 0).
             limit: Maximum number of symbols to return (default: 50).
         Returns:
             list: List of dictionaries, each representing a symbol.
         """
-        return self._get_binary(binary).list_symbols(query, offset, limit)
+        return self._get_binary(binary_name).list_symbols(query, offset, limit)
 
     @mcp_tool(name="resolve_address")
-    def resolve_address(self, binary: str, address: Union[str, int]) -> Dict[str, Any]:
+    def resolve_address(self, binary_name: str, address: Union[str, int]) -> Dict[str, Any]:
         """Resolve information about an address.
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
             address: Address to resolve (hex string or integer).
         Returns:
             dict: Information about the address, including location (function, block, instruction).
         """
-        return self._get_binary(binary).resolve_address(address)
+        return self._get_binary(binary_name).resolve_address(address)
 
     @mcp_tool(name="get_binary_bytes")
-    def get_binary_bytes(self, binary: str, address: Union[str, int], length: int, format_type: str = None) -> str:
+    def get_binary_bytes(self, binary_name: str, address: Union[str, int], length: int, format_type: str = None) -> str:
         """Get bytes from the binary.
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
             address: Start address to read bytes from (hex string or integer).
             length: Number of bytes to read.
             format_type: Output format (optional, e.g., 'hex', 'base64').
@@ -256,7 +256,7 @@ class McpService:
             str: The bytes read, formatted as requested.
         """
         try:
-            return self._get_binary(binary).get_bytes(address, length, format_type)
+            return self._get_binary(binary_name).get_bytes(address, length, format_type)
         except LookupError as e:
             raise McpError("NOT_FOUND", str(e))
         except RuntimeError as e:
@@ -265,49 +265,49 @@ class McpService:
             raise McpError("INVALID_ARGUMENT", str(e))
 
     @mcp_tool(name="get_binary_decoded_data")
-    def get_binary_decoded_data(self, binary: str, address: Union[str, int], length: int) -> Dict[str, Any]:
+    def get_binary_decoded_data(self, binary_name: str, address: Union[str, int], length: int) -> Dict[str, Any]:
         """Get decoded data from the binary.
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
             address: Start address to read data from (hex string or integer).
             length: Number of bytes to read.
         Returns:
             dict: Decoded data information.
         """
-        return self._get_binary(binary).get_decoded_data(address, length)
+        return self._get_binary(binary_name).get_decoded_data(address, length)
 
     @mcp_tool(name="get_binary_disassembly_text")
-    def get_binary_disassembly_text(self, binary: str, start_address: Union[str, int], end_address: Union[str, int]) -> str:
+    def get_binary_disassembly_text(self, binary_name: str, start_address: Union[str, int], end_address: Union[str, int]) -> str:
         """Get disassembly text for a range.
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
             start_address: Start address of the range (hex string or integer).
             end_address: End address of the range (hex string or integer).
         Returns:
             str: Disassembly text for the specified range.
         """
-        return self._get_binary(binary).get_disassembly_text(start_address, end_address)
+        return self._get_binary(binary_name).get_disassembly_text(start_address, end_address)
 
     @mcp_tool(name="get_binary_function_disassembly_text")
-    def get_binary_function_disassembly_text(self, binary: str, function_address: Union[str, int]) -> str:
+    def get_binary_function_disassembly_text(self, binary_name: str, function_address: Union[str, int]) -> str:
         """Get disassembly text for a function.
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
             function_address: Address of the function (hex string or integer).
         Returns:
             str: Disassembly text for the entire function.
         """
-        return self._get_binary(binary).get_function_disassembly_text(function_address)
+        return self._get_binary(binary_name).get_function_disassembly_text(function_address)
 
     @mcp_tool(name="get_binary_functions")
-    def get_binary_functions(self, binary: str, query: str = None, offset: int = 0, limit: int = 50, filters: dict = None) -> List[Dict[str, Any]]:
+    def get_binary_functions(self, binary_name: str, query: str = None, offset: int = 0, limit: int = 50, filters: dict = None) -> List[Dict[str, Any]]:
         """List functions in the binary.
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
             query: Search query for function names (optional).
             offset: Start index for pagination (default: 0).
             limit: Maximum number of functions to return (default: 50).
@@ -315,14 +315,14 @@ class McpService:
         Returns:
             list: List of dictionaries, each representing a function (name, address, size).
         """
-        return self._get_binary(binary).list_functions(query, offset, limit, filters)
+        return self._get_binary(binary_name).list_functions(query, offset, limit, filters)
 
     @mcp_tool(name="get_binary_function_by_name")
-    def get_binary_function_by_name(self, binary: str, names: Union[str, List[str]], match: str = None) -> List[Dict[str, Any]]:
+    def get_binary_function_by_name(self, binary_name: str, names: Union[str, List[str]], match: str = None) -> List[Dict[str, Any]]:
         """Get functions by name.
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
             names: Function name(s) (string or list of strings).
             match: Matching mode ('exact', 'contains', 'regex').
         Returns:
@@ -333,14 +333,14 @@ class McpService:
             names = self._coerce_json_list(names)
         if not isinstance(names, list):
             names = [names]
-        return self._get_binary(binary).get_functions_by_name(names, match)
+        return self._get_binary(binary_name).get_functions_by_name(names, match)
 
     @mcp_tool(name="get_binary_function_by_address")
-    def get_binary_function_by_address(self, binary: str, addresses: Union[str, int, List[Union[str, int]]]) -> List[Dict[str, Any]]:
+    def get_binary_function_by_address(self, binary_name: str, addresses: Union[str, int, List[Union[str, int]]]) -> List[Dict[str, Any]]:
         """Get function information in the project by address(es).
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
             addresses: Function address(es) (hexadecimal or integer). Can be a single address, a comma-separated string, or a list of addresses.
         Returns:
             list: A list of dictionaries mapping addresses to function information (name, address, size) or error info.
@@ -349,14 +349,14 @@ class McpService:
              addresses = self._coerce_json_list(addresses)
         if not isinstance(addresses, list):
             addresses = [addresses]
-        return self._get_binary(binary).get_functions_by_address(addresses)
+        return self._get_binary(binary_name).get_functions_by_address(addresses)
 
-    @mcp_tool(name="get_binary_function_code_by_address")
-    def get_binary_function_code_by_address(self, binary: str, addresses: Union[str, int, List[Union[str, int]]], options: dict = None) -> List[Dict[str, Any]]:
+    @mcp_tool(name="get_binary_function_pseudocode_by_address")
+    def get_binary_function_pseudocode_by_address(self, binary_name: str, addresses: Union[str, int, List[Union[str, int]]], options: dict = None) -> List[Dict[str, Any]]:
         """Get pseudocode for functions.
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
             addresses: Function address(es) (hexadecimal or integer). Can be a single address, a comma-separated string, or a list of addresses.
             options: Options for decompilation (optional).
         Returns:
@@ -366,42 +366,42 @@ class McpService:
              addresses = self._coerce_json_list(addresses)
         if not isinstance(addresses, list):
             addresses = [addresses]
-        return self._get_binary(binary).get_pseudocode_by_address(addresses, options)
+        return self._get_binary(binary_name).get_pseudocode_by_address(addresses, options)
 
     @mcp_tool(name="get_binary_function_callees")
-    def get_binary_function_callees(self, binary: str, function_address: Union[str, int], depth: int = None, limit: int = None) -> List[Dict[str, Any]]:
+    def get_binary_function_callees(self, binary_name: str, function_address: Union[str, int], depth: int = None, limit: int = None) -> List[Dict[str, Any]]:
         """Get callees of a function.
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
             function_address: Address of the function (hex string or integer).
             depth: Recursion depth (optional).
             limit: Maximum number of callees to return (optional).
         Returns:
             list: List of dictionaries, each representing a called function.
         """
-        return self._get_binary(binary).get_callees(function_address, depth, limit)
+        return self._get_binary(binary_name).get_callees(function_address, depth, limit)
 
     @mcp_tool(name="get_binary_function_callers")
-    def get_binary_function_callers(self, binary: str, function_address: Union[str, int], depth: int = None, limit: int = None) -> List[Dict[str, Any]]:
+    def get_binary_function_callers(self, binary_name: str, function_address: Union[str, int], depth: int = None, limit: int = None) -> List[Dict[str, Any]]:
         """Get callers of a function.
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
             function_address: Address of the function (hex string or integer).
             depth: Recursion depth (optional).
             limit: Maximum number of callers to return (optional).
         Returns:
             list: List of dictionaries, each representing a calling function.
         """
-        return self._get_binary(binary).get_callers(function_address, depth, limit)
+        return self._get_binary(binary_name).get_callers(function_address, depth, limit)
 
     @mcp_tool(name="get_binary_cross_references_to_address")
-    def get_binary_cross_references_to_address(self, binary: str, address: Union[str, int], offset: int = 0, limit: int = 50, filters: dict = None) -> List[Dict[str, Any]]:
+    def get_binary_cross_references_to_address(self, binary_name: str, address: Union[str, int], offset: int = 0, limit: int = 50, filters: dict = None) -> List[Dict[str, Any]]:
         """Get cross references to an address.
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
             address: Target address (hex string or integer).
             offset: Start index for pagination (default: 0).
             limit: Maximum number of xrefs to return (default: 50).
@@ -409,28 +409,28 @@ class McpService:
         Returns:
             list: List of dictionaries, each representing a cross reference.
         """
-        return self._get_binary(binary).get_xrefs_to_address(address, offset, limit, filters)
+        return self._get_binary(binary_name).get_xrefs_to_address(address, offset, limit, filters)
 
     @mcp_tool(name="get_binary_cross_references_from_address")
-    def get_binary_cross_references_from_address(self, binary: str, address: Union[str, int], offset: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
+    def get_binary_cross_references_from_address(self, binary_name: str, address: Union[str, int], offset: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
         """Get cross references from an address.
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
             address: Source address (hex string or integer).
             offset: Start index for pagination (default: 0).
             limit: Maximum number of xrefs to return (default: 50).
         Returns:
             list: List of dictionaries, each representing a cross reference.
         """
-        return self._get_binary(binary).get_xrefs_from_address(address, offset, limit)
+        return self._get_binary(binary_name).get_xrefs_from_address(address, offset, limit)
 
     @mcp_tool(name="list_binary_strings")
-    def list_binary_strings(self, binary: str, query: str = None, min_length: int = None, encodings: Union[str, List[str]] = None, offset: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
+    def list_binary_strings(self, binary_name: str, query: str = None, min_length: int = None, encodings: Union[str, List[str]] = None, offset: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
         """List strings in the binary.
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
             query: Search query for strings (optional).
             min_length: Minimum string length (optional).
             encodings: List of encodings to search (optional).
@@ -441,34 +441,34 @@ class McpService:
         """
         if encodings:
             encodings = self._coerce_json_list(encodings)
-        return self._get_binary(binary).list_strings(query, min_length, encodings, offset, limit)
+        return self._get_binary(binary_name).list_strings(query, min_length, encodings, offset, limit)
 
     @mcp_tool(name="get_string_xrefs")
-    def get_string_xrefs(self, binary: str, string_address: Union[str, int], offset: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
+    def get_string_xrefs(self, binary_name: str, string_address: Union[str, int], offset: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
         """Get cross references to a string.
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
             string_address: Address of the string (hex string or integer).
             offset: Start index for pagination (default: 0).
             limit: Maximum number of xrefs to return (default: 50).
         Returns:
             list: List of dictionaries, each representing a cross reference to the string.
         """
-        return self._get_binary(binary).get_string_xrefs(string_address, offset, limit)
+        return self._get_binary(binary_name).get_string_xrefs(string_address, offset, limit)
 
     @mcp_tool(name="search_string_symbol_in_binary")
-    def search_string_symbol_in_binary(self, binary: str, search_string: str, match: str = "contains") -> List[Dict[str, Any]]:
+    def search_string_symbol_in_binary(self, binary_name: str, search_string: str, match: str = "contains") -> List[Dict[str, Any]]:
         """Search for string/symbol in binary.
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
             search_string: The string or symbol name to search for.
             match: Matching mode ('exact', 'contains', 'regex'). Default is 'contains'.
         Returns:
             list: List of dictionaries, each representing a match.
         """
-        b = self._get_binary(binary)
+        b = self._get_binary(binary_name)
         match = (match or "contains").lower()
         if match == "exact":
             hits = b.list_strings(query=search_string, offset=0, limit=500)
@@ -485,11 +485,11 @@ class McpService:
         return b.list_strings(query=search_string, offset=0, limit=500)
 
     @mcp_tool(name="search_immediates_in_binary")
-    def search_immediates_in_binary(self, binary: str, value: Any, width: int = None, offset: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
+    def search_immediates_in_binary(self, binary_name: str, value: Any, width: int = None, offset: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
         """Search for immediate values.
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
             value: The immediate value to search for.
             width: Width of the value in bytes (optional).
             offset: Start index for pagination (default: 0).
@@ -497,21 +497,21 @@ class McpService:
         Returns:
             list: List of dictionaries, each representing a match.
         """
-        return self._get_binary(binary).search_immediates(value, width, offset, limit)
+        return self._get_binary(binary_name).search_immediates(value, width, offset, limit)
 
     @mcp_tool(name="search_bytes_pattern_in_binary")
-    def search_bytes_pattern_in_binary(self, binary: str, pattern: str, offset: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
+    def search_bytes_pattern_in_binary(self, binary_name: str, pattern: str, offset: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
         """Search for byte pattern.
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
             pattern: Byte pattern string (e.g., "E8 ?? ?? ?? ??").
             offset: Start index for pagination (default: 0).
             limit: Maximum number of matches to return (default: 50).
         Returns:
             list: List of dictionaries, each representing a match.
         """
-        b = self._get_binary(binary)
+        b = self._get_binary(binary_name)
         try:
             return b.search_bytes_pattern(pattern, offset, limit)
         except RuntimeError as e:
@@ -591,11 +591,11 @@ class McpService:
         return hits[offset : offset + limit]
 
     @mcp_tool(name="search_similar_functions_in_project")
-    def search_similar_functions_in_project(self, binary: str, function_address: Union[str, int], top_k: int = None, threshold: float = None) -> None:
+    def search_similar_functions_in_project(self, binary_name: str, function_address: Union[str, int], top_k: int = None, threshold: float = None) -> None:
         """Search similar functions.
 
         Args:
-            binary: Binary identifier (string).
+            binary_name: Binary name (string).
             function_address: Address of the function to find similarities for (hex string or integer).
             top_k: Number of similar functions to return (optional).
             threshold: Similarity threshold (optional).

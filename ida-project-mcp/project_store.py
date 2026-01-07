@@ -95,13 +95,15 @@ class ProjectStore:
         self._aliases.setdefault(key, set()).add(binary_id)
         self._aliases.setdefault(key.lower(), set()).add(binary_id)
 
-    def get_binary(self, binary_id):
-        if binary_id is None:
+    def get_binary(self, binary_name):
+        if binary_name is None:
             return None
-        key = str(binary_id)
+        key = str(binary_name)
+        # Try direct ID lookup first
         b = self._binaries.get(key)
         if b is not None:
             return b
+        # Try alias lookup
         candidates = self._aliases.get(key) or self._aliases.get(key.lower())
         if not candidates or len(candidates) != 1:
             return None
@@ -139,27 +141,23 @@ class ProjectStore:
                     sym_count = 0
                 if bool(sym_count > 0) != bool(filters["has_symbols"]):
                     continue
-            if not detail:
-                out.append({"binary": b.display_name})
-                continue
-            meta = {}
+
+            is_lib = False
+            name = b.display_name
+            if name and name.lower().endswith(('.dll', '.so', '.dylib', '.lib', '.a')):
+                is_lib = True
+
+            # Check metadata
             try:
                 meta = b.get_metadata_dict()
+                fmt = meta.get("format", "")
+                if "dll" in fmt.lower() or "shared object" in fmt.lower() or "library" in fmt.lower():
+                    is_lib = True
             except Exception:
-                meta = {}
-            out.append(
-                {
-                    "binary": b.display_name,
-                    "binary_id": b.binary_id,
-                    "display_name": b.display_name,
-                    "path": b.binary_path,
-                    "db_path": b.db_path,
-                    "format": meta.get("format"),
-                    "arch": meta.get("processor"),
-                    "bits": meta.get("address_width"),
-                    "hashes": {"sha256": meta.get("sha256"), "md5": meta.get("md5"), "crc32": meta.get("crc32")},
-                    "image_base": meta.get("image_base"),
-                    "entry_points": [],
-                }
-            )
+                pass
+
+            out.append({
+                "binary_name": b.display_name,
+                "is_library": is_lib
+            })
         return out[offset : offset + limit]
