@@ -240,6 +240,11 @@ def main():
     else:
         output_db = os.path.splitext(input_path)[0] + ".db"
         
+    if os.path.exists(output_db):
+        host_log(f"Target database already exists: {output_db}")
+        host_log("Skipping export.")
+        return
+        
     host_log(f"Input  : {input_path}")
     host_log(f"Output : {output_db}")
     host_log(f"Workers: {args.workers}")
@@ -310,8 +315,17 @@ def main():
             print("No functions found. Nothing to parallelize.")
             return
 
-        chunk_size = (total_funcs + args.workers - 1) // args.workers
-        chunks = [all_funcs[i:i + chunk_size] for i in range(0, total_funcs, chunk_size)]
+        # Balanced partitioning to ensure all workers get tasks if possible
+        base_size = total_funcs // args.workers
+        remainder = total_funcs % args.workers
+        
+        chunks = []
+        start = 0
+        for i in range(args.workers):
+            size = base_size + (1 if i < remainder else 0)
+            if size > 0:
+                chunks.append(all_funcs[start : start + size])
+                start += size
         
         worker_files = []
         for i, chunk in enumerate(chunks):

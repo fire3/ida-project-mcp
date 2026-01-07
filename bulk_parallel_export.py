@@ -318,8 +318,7 @@ def export_bundle(scan_dir, out_dir, target_path, workers, on_line):
 
     _safe_makedirs(out_dir)
 
-    needed = read_elf_needed(target_path)
-    resolved = resolve_needed_libs(scan_dir, target_path, needed)
+    resolved = resolve_recursive_dependencies(scan_dir, target_path)
 
     plan = [{"role": "main", "name": os.path.basename(target_path), "path": target_path}]
     for r in resolved:
