@@ -239,23 +239,45 @@ def build_basename_index(scan_dir):
     return mapping
 
 
-def resolve_needed_libs(scan_dir, main_path, needed_names):
+def resolve_recursive_dependencies(scan_dir, target_path):
+    scan_dir = os.path.abspath(scan_dir)
+    target_path = os.path.abspath(target_path)
     idx = build_basename_index(scan_dir)
-    main_id = read_elf_identity(main_path)
-    resolved = []
-    for name in needed_names:
-        candidates = idx.get(name, [])
-        best = None
-        if main_id:
-            for c in candidates:
-                cid = read_elf_identity(c)
-                if cid and cid == main_id:
-                    best = c
-                    break
-        if not best and candidates:
-            best = candidates[0]
-        resolved.append({"name": name, "path": best})
-    return resolved
+
+    resolved_map = {}  # name -> path
+    visited_paths = set()
+    queue = []
+
+    # Start with target
+    visited_paths.add(target_path)
+    queue.append(target_path)
+
+    while queue:
+        curr_path = queue.pop(0)
+        curr_id = read_elf_identity(curr_path)
+        needed = read_elf_needed(curr_path)
+
+        for name in needed:
+            if name in resolved_map:
+                continue
+
+            candidates = idx.get(name, [])
+            best = None
+            if curr_id:
+                for c in candidates:
+                    cid = read_elf_identity(c)
+                    if cid and cid == curr_id:
+                        best = c
+                        break
+            if not best and candidates:
+                best = candidates[0]
+
+            resolved_map[name] = best
+            if best and best not in visited_paths:
+                visited_paths.add(best)
+                queue.append(best)
+
+    return [{"name": k, "path": v} for k, v in resolved_map.items()]
 
 
 def _stream_subprocess(cmd, cwd, on_line):
@@ -331,7 +353,7 @@ def export_bundle(scan_dir, out_dir, target_path, workers, on_line):
         "created_at": int(time.time()),
         "scan_dir": scan_dir,
         "output_dir": out_dir,
-        "target": {"path": target_path, "db": None},
+        "target": {"db": None},
         "dependencies": [],
         "exports": [],
     }
@@ -359,8 +381,6 @@ def export_bundle(scan_dir, out_dir, target_path, workers, on_line):
         record = {
             "role": item["role"],
             "name": item["name"],
-            "source_path": src_path,
-            "path": out_bin,
             "db": out_db,
             "idb": out_idb,
             "status": status,
@@ -368,11 +388,9 @@ def export_bundle(scan_dir, out_dir, target_path, workers, on_line):
         index["exports"].append(record)
         if item["role"] == "main":
             index["target"]["db"] = out_db
-            index["target"]["source_path"] = src_path
-            index["target"]["path"] = out_bin
             index["target"]["idb"] = out_idb
         else:
-            index["dependencies"].append({"name": item["name"], "source_path": src_path, "path": out_bin, "db": out_db, "idb": out_idb, "status": status})
+            index["dependencies"].append({"name": item["name"], "db": out_db, "idb": out_idb, "status": status})
 
     index_path = os.path.join(out_dir, "export_index.json")
     with open(index_path, "w", encoding="utf-8") as f:
@@ -527,23 +545,22 @@ def main():
     parser.add_argument("--out-dir", help="Directory to write output db files")
     parser.add_argument("--target", help="Main program path (must be under scan-dir)")
     parser.add_argument("-j", "--workers", type=int, default=4, help="parallel_export workers")
-    parser.add_argument("--no-ui", action="store_true", help="Run in CLI mode")
+    parser.add_argument("--gui", action="store_true", help="Run in GUI mode")
+    parser.add_argument("--no-ui", action="store_true", help="Deprecated (default is CLI)")
     args = parser.parse_args()
 
-    if args.no_ui:
-        if not args.scan_dir or not args.out_dir or not args.target:
-            print("Error: --scan-dir --out-dir --target are required with --no-ui", file=sys.stderr)
-            sys.exit(2)
-        _run_cli(args)
-        return
+    if args.gui:
+        try:
+            _run_ui()
+            return
+        except Exception as e:
+            print(f"UI unavailable ({e}). Falling back to CLI.", file=sys.stderr)
 
-    try:
-        _run_ui()
-    except Exception as e:
-        if not args.scan_dir or not args.out_dir or not args.target:
-            print(f"UI unavailable ({e}). Use --no-ui with --scan-dir/--out-dir/--target.", file=sys.stderr)
-            sys.exit(2)
-        _run_cli(args)
+    if not args.scan_dir or not args.out_dir or not args.target:
+        print("Error: --scan-dir --out-dir --target are required for CLI mode", file=sys.stderr)
+        sys.exit(2)
+
+    _run_cli(args)
 
 
 if __name__ == "__main__":
