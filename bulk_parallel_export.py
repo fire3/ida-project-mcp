@@ -374,10 +374,14 @@ def export_bundle(scan_dir, out_dir, target_path, workers, on_line):
         out_idb = _detect_idb_path(out_bin) if status == "ok" else None
 
         if item["role"] == "main":
-            index["target"]["db"] = out_db
-            index["target"]["idb"] = out_idb
+            index["target"]["db"] = os.path.basename(out_db) if out_db else None
+            index["target"]["idb"] = os.path.basename(out_idb) if out_idb else None
         else:
-            index["dependencies"].append({"name": item["name"], "db": out_db, "idb": out_idb})
+            index["dependencies"].append({
+                "name": item["name"],
+                "db": os.path.basename(out_db) if out_db else None,
+                "idb": os.path.basename(out_idb) if out_idb else None
+            })
 
     index_path = os.path.join(out_dir, "export_index.json")
     with open(index_path, "w", encoding="utf-8") as f:
