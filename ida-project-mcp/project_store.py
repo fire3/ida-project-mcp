@@ -25,17 +25,27 @@ class ProjectStore:
         if index_path:
             with open(index_path, "r", encoding="utf-8") as f:
                 idx = json.load(f)
-            exports = idx.get("exports") or []
-            for item in exports:
+            
+            # Process target
+            target = idx.get("target")
+            if target and target.get("db"):
+                rec = {
+                    "db": target.get("db"),
+                    "display_name": target.get("name"),
+                    "role": "main",
+                }
+                self._add_binary(rec)
+
+            # Process dependencies
+            dependencies = idx.get("dependencies") or []
+            for item in dependencies:
                 db_path = item.get("db")
                 if not db_path:
                     continue
                 rec = {
                     "db": db_path,
-                    "path": item.get("path"),
-                    "display_name": item.get("name") or os.path.basename(db_path),
-                    "role": item.get("role"),
-                    "status": item.get("status"),
+                    "display_name": item.get("name"),
+                    "role": "dep",
                 }
                 self._add_binary(rec)
             return
@@ -44,7 +54,7 @@ class ProjectStore:
             for fn in sorted(os.listdir(self.project_path)):
                 if fn.lower().endswith(".db"):
                     db_path = os.path.join(self.project_path, fn)
-                    self._add_binary({"db": db_path, "path": None, "display_name": fn, "role": None, "status": None})
+                    self._add_binary({"db": db_path, "display_name": fn, "role": None})
 
     def _resolve_index_path(self, project_path):
         if not project_path:
@@ -63,7 +73,6 @@ class ProjectStore:
             return
         q = BinaryDbQuery(
             db_path=db_path,
-            binary_path=rec.get("path"),
             binary_id=os.path.basename(db_path),
             display_name=rec.get("display_name"),
         )
@@ -85,8 +94,6 @@ class ProjectStore:
         self._binary_order.append(binary_id)
         self._add_alias(q.display_name, binary_id)
         self._add_alias(os.path.basename(db_path), binary_id)
-        if q.binary_path:
-            self._add_alias(os.path.basename(q.binary_path), binary_id)
 
     def _add_alias(self, alias, binary_id):
         if not alias:
@@ -134,30 +141,7 @@ class ProjectStore:
         filters = filters or {}
         out = []
         for b in self.list_binaries():
-            if "has_symbols" in filters and filters["has_symbols"] is not None:
-                try:
-                    sym_count = b._count("SELECT COUNT(1) FROM symbols") if b._table_exists("symbols") else 0
-                except Exception:
-                    sym_count = 0
-                if bool(sym_count > 0) != bool(filters["has_symbols"]):
-                    continue
-
-            is_lib = False
-            name = b.display_name
-            if name and name.lower().endswith(('.dll', '.so', '.dylib', '.lib', '.a')):
-                is_lib = True
-
-            # Check metadata
-            try:
-                meta = b.get_metadata_dict()
-                fmt = meta.get("format", "")
-                if "dll" in fmt.lower() or "shared object" in fmt.lower() or "library" in fmt.lower():
-                    is_lib = True
-            except Exception:
-                pass
-
             out.append({
                 "binary_name": b.display_name,
-                "is_library": is_lib
             })
         return out[offset : offset + limit]

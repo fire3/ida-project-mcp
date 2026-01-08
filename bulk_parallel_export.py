@@ -349,11 +349,8 @@ def export_bundle(scan_dir, out_dir, target_path, workers, on_line):
 
     index = {
         "created_at": int(time.time()),
-        "scan_dir": scan_dir,
-        "output_dir": out_dir,
-        "target": {"db": None},
+        "target": {"name": os.path.basename(target_path), "db": None},
         "dependencies": [],
-        "exports": [],
     }
 
     project_root = os.path.dirname(os.path.abspath(__file__))
@@ -361,7 +358,7 @@ def export_bundle(scan_dir, out_dir, target_path, workers, on_line):
     for item in plan:
         if not item.get("path"):
             if item["role"] == "dep_missing":
-                index["dependencies"].append({"name": item["name"], "path": None, "db": None, "status": "missing"})
+                index["dependencies"].append({"name": item["name"], "db": None, "idb": None})
             continue
 
         src_path = os.path.abspath(item["path"])
@@ -376,19 +373,11 @@ def export_bundle(scan_dir, out_dir, target_path, workers, on_line):
         status = "ok" if rc == 0 else f"failed_exit_{rc}"
         out_idb = _detect_idb_path(out_bin) if status == "ok" else None
 
-        record = {
-            "role": item["role"],
-            "name": item["name"],
-            "db": out_db,
-            "idb": out_idb,
-            "status": status,
-        }
-        index["exports"].append(record)
         if item["role"] == "main":
             index["target"]["db"] = out_db
             index["target"]["idb"] = out_idb
         else:
-            index["dependencies"].append({"name": item["name"], "db": out_db, "idb": out_idb, "status": status})
+            index["dependencies"].append({"name": item["name"], "db": out_db, "idb": out_idb})
 
     index_path = os.path.join(out_dir, "export_index.json")
     with open(index_path, "w", encoding="utf-8") as f:
