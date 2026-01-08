@@ -23,14 +23,17 @@ class ProjectStore:
     def _load(self):
         index_path = self._resolve_index_path(self.project_path)
         if index_path:
+            base_dir = os.path.dirname(index_path)
             with open(index_path, "r", encoding="utf-8") as f:
                 idx = json.load(f)
             
             # Process target
             target = idx.get("target")
             if target and target.get("db"):
+                db_rel = target.get("db")
+                db_full = os.path.join(base_dir, db_rel)
                 rec = {
-                    "db": target.get("db"),
+                    "db": db_full,
                     "display_name": target.get("name"),
                     "role": "main",
                 }
@@ -39,11 +42,12 @@ class ProjectStore:
             # Process dependencies
             dependencies = idx.get("dependencies") or []
             for item in dependencies:
-                db_path = item.get("db")
-                if not db_path:
+                db_rel = item.get("db")
+                if not db_rel:
                     continue
+                db_full = os.path.join(base_dir, db_rel)
                 rec = {
-                    "db": db_path,
+                    "db": db_full,
                     "display_name": item.get("name"),
                     "role": "dep",
                 }
