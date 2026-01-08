@@ -5,10 +5,8 @@ import time
 import hashlib
 import argparse
 import subprocess
-import threading
 import shutil
 from dataclasses import dataclass
-from queue import Queue, Empty
 
 
 def _now_ts():
@@ -399,168 +397,24 @@ def export_bundle(scan_dir, out_dir, target_path, workers, on_line):
     return index_path
 
 
-def _run_cli(args):
+def main():
+    parser = argparse.ArgumentParser(description="Bulk wrapper for parallel_export.py")
+    parser.add_argument("--scan-dir", help="Directory to scan for target and libraries", required=True)
+    parser.add_argument("--out-dir", help="Directory to write output db files", required=True)
+    parser.add_argument("--target", help="Main program path (must be under scan-dir)", required=True)
+    parser.add_argument("-j", "--workers", type=int, default=4, help="parallel_export workers")
+    args = parser.parse_args()
+
     def on_line(s):
         print(s, flush=True)
 
-    export_bundle(args.scan_dir, args.out_dir, args.target, args.workers, on_line)
-
-
-def _run_ui():
     try:
-        import tkinter as tk
-        from tkinter import ttk, filedialog, messagebox
-    except Exception:
-        raise RuntimeError("tkinter_not_available")
-
-    root = tk.Tk()
-    root.title("Parallel Export Bundle")
-
-    scan_var = tk.StringVar()
-    out_var = tk.StringVar()
-    target_var = tk.StringVar()
-    workers_var = tk.StringVar(value="4")
-    status_var = tk.StringVar(value="")
-
-    q = Queue()
-    running = {"v": False}
-
-    def log_line(s):
-        q.put(s)
-
-    def pick_scan_dir():
-        d = filedialog.askdirectory()
-        if d:
-            scan_var.set(d)
-
-    def pick_out_dir():
-        d = filedialog.askdirectory()
-        if d:
-            out_var.set(d)
-
-    def pick_target():
-        initial = scan_var.get() or None
-        p = filedialog.askopenfilename(initialdir=initial)
-        if p:
-            target_var.set(p)
-
-    def set_enabled(enabled):
-        state = "normal" if enabled else "disabled"
-        for w in (scan_entry, out_entry, target_entry, workers_entry, scan_btn, out_btn, target_btn, start_btn):
-            w.configure(state=state)
-
-    def worker_thread(scan_dir, out_dir, target_path, workers):
-        try:
-            idx = export_bundle(scan_dir, out_dir, target_path, workers, log_line)
-            log_line(f"[BUNDLE {_now_ts()}] done: {idx}")
-        except Exception as e:
-            log_line(f"[BUNDLE {_now_ts()}] error: {e}")
-        finally:
-            q.put(("__done__", None))
-
-    def start():
-        if running["v"]:
-            return
-        scan_dir = scan_var.get().strip()
-        out_dir = out_var.get().strip()
-        target_path = target_var.get().strip()
-        try:
-            workers = int(workers_var.get().strip())
-        except Exception:
-            messagebox.showerror("Error", "workers必须是整数")
-            return
-        if not scan_dir or not out_dir or not target_path:
-            messagebox.showerror("Error", "scan_dir/out_dir/target不能为空")
-            return
-        running["v"] = True
-        set_enabled(False)
-        status_var.set("running")
-        t = threading.Thread(target=worker_thread, args=(scan_dir, out_dir, target_path, workers), daemon=True)
-        t.start()
-
-    def pump():
-        changed = False
-        try:
-            while True:
-                item = q.get_nowait()
-                if isinstance(item, tuple) and item and item[0] == "__done__":
-                    running["v"] = False
-                    set_enabled(True)
-                    status_var.set("idle")
-                    continue
-                text.insert("end", str(item) + "\n")
-                text.see("end")
-                changed = True
-        except Empty:
-            pass
-        if changed:
-            text.update_idletasks()
-        root.after(100, pump)
-
-    frm = ttk.Frame(root, padding=10)
-    frm.grid(row=0, column=0, sticky="nsew")
-    root.columnconfigure(0, weight=1)
-    root.rowconfigure(0, weight=1)
-    frm.columnconfigure(1, weight=1)
-
-    ttk.Label(frm, text="扫描目录").grid(row=0, column=0, sticky="w")
-    scan_entry = ttk.Entry(frm, textvariable=scan_var)
-    scan_entry.grid(row=0, column=1, sticky="ew", padx=(8, 8))
-    scan_btn = ttk.Button(frm, text="选择", command=pick_scan_dir)
-    scan_btn.grid(row=0, column=2, sticky="e")
-
-    ttk.Label(frm, text="输出目录").grid(row=1, column=0, sticky="w", pady=(8, 0))
-    out_entry = ttk.Entry(frm, textvariable=out_var)
-    out_entry.grid(row=1, column=1, sticky="ew", padx=(8, 8), pady=(8, 0))
-    out_btn = ttk.Button(frm, text="选择", command=pick_out_dir)
-    out_btn.grid(row=1, column=2, sticky="e", pady=(8, 0))
-
-    ttk.Label(frm, text="主程序目标").grid(row=2, column=0, sticky="w", pady=(8, 0))
-    target_entry = ttk.Entry(frm, textvariable=target_var)
-    target_entry.grid(row=2, column=1, sticky="ew", padx=(8, 8), pady=(8, 0))
-    target_btn = ttk.Button(frm, text="选择", command=pick_target)
-    target_btn.grid(row=2, column=2, sticky="e", pady=(8, 0))
-
-    ttk.Label(frm, text="并发workers").grid(row=3, column=0, sticky="w", pady=(8, 0))
-    workers_entry = ttk.Entry(frm, textvariable=workers_var, width=8)
-    workers_entry.grid(row=3, column=1, sticky="w", padx=(8, 8), pady=(8, 0))
-
-    start_btn = ttk.Button(frm, text="开始导出", command=start)
-    start_btn.grid(row=3, column=2, sticky="e", pady=(8, 0))
-
-    ttk.Label(frm, textvariable=status_var).grid(row=4, column=0, columnspan=3, sticky="w", pady=(8, 0))
-
-    text = tk.Text(frm, height=22, width=120)
-    text.grid(row=5, column=0, columnspan=3, sticky="nsew", pady=(8, 0))
-    frm.rowconfigure(5, weight=1)
-
-    status_var.set("idle")
-    root.after(100, pump)
-    root.mainloop()
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Bulk wrapper for parallel_export.py")
-    parser.add_argument("--scan-dir", help="Directory to scan for target and libraries")
-    parser.add_argument("--out-dir", help="Directory to write output db files")
-    parser.add_argument("--target", help="Main program path (must be under scan-dir)")
-    parser.add_argument("-j", "--workers", type=int, default=4, help="parallel_export workers")
-    parser.add_argument("--gui", action="store_true", help="Run in GUI mode")
-    parser.add_argument("--no-ui", action="store_true", help="Deprecated (default is CLI)")
-    args = parser.parse_args()
-
-    if args.gui:
-        try:
-            _run_ui()
-            return
-        except Exception as e:
-            print(f"UI unavailable ({e}). Falling back to CLI.", file=sys.stderr)
-
-    if not args.scan_dir or not args.out_dir or not args.target:
-        print("Error: --scan-dir --out-dir --target are required for CLI mode", file=sys.stderr)
-        sys.exit(2)
-
-    _run_cli(args)
+        export_bundle(args.scan_dir, args.out_dir, args.target, args.workers, on_line)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    
+    sys.exit(0)
 
 
 if __name__ == "__main__":
