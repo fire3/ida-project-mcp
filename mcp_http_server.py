@@ -5,8 +5,10 @@ import os
 import sys
 import uvicorn
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, Response
+from typing import Optional, List, Union, Dict, Any
+from fastapi import FastAPI, Request, Response, APIRouter, HTTPException, Query, Path
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -47,6 +49,271 @@ async def lifespan(app: FastAPI):
         project_store.close()
 
 app = FastAPI(lifespan=lifespan)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- REST API Implementation ---
+
+api_router = APIRouter(prefix="/api/v1")
+
+def get_service():
+    if not service:
+        raise HTTPException(status_code=503, detail="Server not initialized")
+    return service
+
+def handle_mcp_error(e: McpError):
+    if e.code == "NOT_FOUND":
+        raise HTTPException(status_code=404, detail=e.message)
+    elif e.code == "INVALID_ARGUMENT":
+        raise HTTPException(status_code=400, detail=e.message)
+    elif e.code == "UNSUPPORTED":
+        raise HTTPException(status_code=501, detail=e.message)
+    else:
+        raise HTTPException(status_code=500, detail=e.message)
+
+# Project Endpoints
+
+@api_router.get("/project")
+def get_project_overview():
+    svc = get_service()
+    try:
+        return svc.get_project_overview()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/project/binaries")
+def list_binaries(
+    offset: int = 0,
+    limit: int = 50,
+    detail: bool = False
+):
+    svc = get_service()
+    return svc.get_project_binaries(offset=offset, limit=limit, detail=detail)
+
+# Binary Endpoints
+
+@api_router.get("/binary/{binary_name}")
+def get_binary_metadata(binary_name: str):
+    svc = get_service()
+    try:
+        return svc.get_binary_metadata(binary_name)
+    except Exception as e: # McpError is wrapped or raised directly? McpService raises standard exceptions or McpError?
+        # McpService methods usually wrap and re-raise or just run. 
+        # But looking at McpService code, _get_binary raises LookupError/KeyError.
+        # Ideally we should catch those too.
+        if isinstance(e, (LookupError, KeyError)):
+             raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/binary/{binary_name}/sections")
+def list_binary_sections(binary_name: str):
+    svc = get_service()
+    try:
+        return svc.list_binary_sections(binary_name)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/binary/{binary_name}/segments")
+def list_binary_segments(binary_name: str):
+    svc = get_service()
+    try:
+        return svc.list_binary_segments(binary_name)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/binary/{binary_name}/functions")
+def list_binary_functions(
+    binary_name: str,
+    query: Optional[str] = None,
+    offset: int = 0,
+    limit: int = 50
+):
+    svc = get_service()
+    try:
+        return svc.list_binary_functions(binary_name, query=query, offset=offset, limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/binary/{binary_name}/imports")
+def list_binary_imports(
+    binary_name: str,
+    offset: int = 0,
+    limit: int = 50
+):
+    svc = get_service()
+    try:
+        return svc.list_binary_imports(binary_name, offset=offset, limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/binary/{binary_name}/exports")
+def list_binary_exports(
+    binary_name: str,
+    offset: int = 0,
+    limit: int = 50
+):
+    svc = get_service()
+    try:
+        return svc.list_binary_exports(binary_name, offset=offset, limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/binary/{binary_name}/symbols")
+def list_binary_symbols(
+    binary_name: str,
+    query: Optional[str] = None,
+    offset: int = 0,
+    limit: int = 50
+):
+    svc = get_service()
+    try:
+        return svc.list_binary_symbols(binary_name, query=query, offset=offset, limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/binary/{binary_name}/strings")
+def list_binary_strings(
+    binary_name: str,
+    query: Optional[str] = None,
+    min_length: Optional[int] = None,
+    offset: int = 0,
+    limit: int = 50
+):
+    svc = get_service()
+    try:
+        return svc.list_binary_strings(binary_name, query=query, min_length=min_length, offset=offset, limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Analysis Endpoints
+
+@api_router.get("/binary/{binary_name}/disassembly")
+def get_binary_disassembly(
+    binary_name: str,
+    start_address: str = Query(..., description="Start address (hex or int)"),
+    end_address: str = Query(..., description="End address (hex or int)")
+):
+    svc = get_service()
+    try:
+        return svc.get_binary_disassembly_text(binary_name, start_address, end_address)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/binary/{binary_name}/function/{address}/disassembly")
+def get_binary_function_disassembly(
+    binary_name: str,
+    address: str
+):
+    svc = get_service()
+    try:
+        return svc.get_binary_function_disassembly_text(binary_name, address)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/binary/{binary_name}/function/{address}/pseudocode")
+def get_binary_function_pseudocode(
+    binary_name: str,
+    address: str
+):
+    svc = get_service()
+    try:
+        # returns list of dicts, but we usually ask for one function here
+        res = svc.get_binary_function_pseudocode_by_address(binary_name, address)
+        if not res:
+            raise HTTPException(status_code=404, detail="Pseudocode not found")
+        return res[0]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/binary/{binary_name}/bytes")
+def get_binary_bytes(
+    binary_name: str,
+    address: str,
+    length: int,
+    format_type: Optional[str] = None
+):
+    svc = get_service()
+    try:
+        return svc.get_binary_bytes(binary_name, address, length, format_type)
+    except McpError as e:
+        handle_mcp_error(e)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/binary/{binary_name}/address/{address}")
+def resolve_address(
+    binary_name: str,
+    address: str
+):
+    svc = get_service()
+    try:
+        return svc.resolve_address(binary_name, address)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/binary/{binary_name}/function/{address}/callers")
+def get_callers(
+    binary_name: str,
+    address: str,
+    depth: Optional[int] = None,
+    limit: Optional[int] = None
+):
+    svc = get_service()
+    try:
+        return svc.get_binary_function_callers(binary_name, address, depth, limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/binary/{binary_name}/function/{address}/callees")
+def get_callees(
+    binary_name: str,
+    address: str,
+    depth: Optional[int] = None,
+    limit: Optional[int] = None
+):
+    svc = get_service()
+    try:
+        return svc.get_binary_function_callees(binary_name, address, depth, limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/binary/{binary_name}/xrefs/to/{address}")
+def get_xrefs_to(
+    binary_name: str,
+    address: str,
+    offset: int = 0,
+    limit: int = 50
+):
+    svc = get_service()
+    try:
+        return svc.get_binary_cross_references_to_address(binary_name, address, offset, limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/binary/{binary_name}/xrefs/from/{address}")
+def get_xrefs_from(
+    binary_name: str,
+    address: str,
+    offset: int = 0,
+    limit: int = 50
+):
+    svc = get_service()
+    try:
+        return svc.get_binary_cross_references_from_address(binary_name, address, offset, limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Include the API router
+app.include_router(api_router)
+
+# --- End of REST API Implementation ---
 
 def _jsonrpc_error(id_value, code, message, data=None):
     err = {"code": int(code), "message": str(message)}
