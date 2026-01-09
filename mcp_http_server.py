@@ -1,11 +1,16 @@
 import argparse
 import json
+import logging
 import os
 import sys
 import uvicorn
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("mcp_server")
 
 def _ensure_local_imports():
     here = os.path.dirname(os.path.abspath(__file__))
@@ -99,6 +104,8 @@ def dispatch(msg):
     mid = msg.get("id")
     method = msg.get("method")
     params = msg.get("params") or {}
+
+    logger.info(f"MCP Request: method={method} params={json.dumps(params, ensure_ascii=False)}")
 
     if method == "initialize":
         pv = params.get("protocolVersion") or "2025-06-18"
