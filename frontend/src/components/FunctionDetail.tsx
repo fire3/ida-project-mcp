@@ -5,7 +5,6 @@ import { Button } from './ui/button';
 import { Code, FileText, ArrowRightLeft, ArrowRight, ArrowLeft } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { cn } from '../lib/utils';
 
 interface FunctionDetailProps {
   binaryName: string;
