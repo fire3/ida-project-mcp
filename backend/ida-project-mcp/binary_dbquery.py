@@ -63,34 +63,38 @@ class BinaryDbQuery:
         self._conn = None
 
     def close(self):
-        if self._conn:
-            try:
-                self._conn.close()
-            finally:
-                self._conn = None
+        # No-op in this stateless version
+        pass
 
-    def _connect(self):
-        if self._conn is not None:
-            return self._conn
+    def _get_conn(self):
+        # Create a new connection for each query to ensure thread safety
         conn = sqlite3.connect(self.db_path, check_same_thread=False)
         conn.row_factory = sqlite3.Row
-        self._conn = conn
         return conn
 
     def _table_exists(self, name):
-        conn = self._connect()
-        cur = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1", (name,))
-        return cur.fetchone() is not None
+        conn = self._get_conn()
+        try:
+            cur = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1", (name,))
+            return cur.fetchone() is not None
+        finally:
+            conn.close()
 
     def _fetchall(self, sql, params=()):
-        conn = self._connect()
-        cur = conn.execute(sql, params)
-        return cur.fetchall()
+        conn = self._get_conn()
+        try:
+            cur = conn.execute(sql, params)
+            return cur.fetchall()
+        finally:
+            conn.close()
 
     def _fetchone(self, sql, params=()):
-        conn = self._connect()
-        cur = conn.execute(sql, params)
-        return cur.fetchone()
+        conn = self._get_conn()
+        try:
+            cur = conn.execute(sql, params)
+            return cur.fetchone()
+        finally:
+            conn.close()
 
     def _count(self, sql, params=()):
         row = self._fetchone(sql, params)
