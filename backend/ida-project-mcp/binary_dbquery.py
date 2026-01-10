@@ -120,6 +120,80 @@ class BinaryDbQuery:
                 pass
         return out
 
+    def get_extended_metadata(self):
+        meta = self.get_metadata_dict()
+        
+        # Arch
+        arch = meta.get("arch")
+        if not arch:
+            proc = meta.get("processor", "unknown")
+            width = meta.get("address_width", "")
+            if width:
+                arch = f"{proc} ({width}-bit)"
+            else:
+                arch = proc
+        
+        # Size
+        size = meta.get("size")
+        if size is None and self.binary_path and os.path.exists(self.binary_path):
+             try:
+                size = os.path.getsize(self.binary_path)
+             except Exception:
+                pass
+        
+        if size is not None:
+            try:
+                size = int(size)
+            except Exception:
+                size = 0
+        
+        # Counts
+        counts = {
+            "functions": self._count("SELECT COUNT(1) FROM functions") if self._table_exists("functions") else 0,
+            "imports": self._count("SELECT COUNT(1) FROM imports") if self._table_exists("imports") else 0,
+            "exports": self._count("SELECT COUNT(1) FROM exports") if self._table_exists("exports") else 0,
+            "symbols": self._count("SELECT COUNT(1) FROM symbols") if self._table_exists("symbols") else 0,
+            "strings": self._count("SELECT COUNT(1) FROM strings") if self._table_exists("strings") else 0,
+            "segments": self._count("SELECT COUNT(1) FROM sections") if self._table_exists("sections") else 0,
+        }
+        
+        # Date formatting
+        created_at = meta.get("created_at")
+        if created_at and str(created_at).isdigit():
+            import datetime
+            try:
+                ts = int(created_at)
+                dt = datetime.datetime.fromtimestamp(ts)
+                created_at = dt.isoformat()
+            except Exception:
+                pass
+        elif not created_at and self.binary_path and os.path.exists(self.binary_path):
+             import datetime
+             try:
+                 ts = os.path.getmtime(self.binary_path)
+                 created_at = datetime.datetime.fromtimestamp(ts).isoformat()
+             except Exception:
+                 pass
+
+        return {
+            "binary_name": self.display_name,
+            "arch": arch,
+            "size": size,
+            "format": meta.get("format", "unknown"),
+            "image_base": meta.get("image_base"),
+            "endian": meta.get("endian"),
+            "created_at": created_at,
+            "counts": counts,
+            "hashes": {
+                "sha256": meta.get("sha256"),
+                "md5": meta.get("md5"),
+                "crc32": meta.get("crc32"),
+            },
+            "libraries": meta.get("libraries"),
+            "processor": meta.get("processor"),
+            "address_width": meta.get("address_width"),
+        }
+
     def get_summary(self):
         meta = self.get_metadata_dict()
         

@@ -154,7 +154,7 @@ class McpService:
         Returns:
             dict: Metadata of the binary including architecture, file type, etc.
         """
-        return self._get_binary(binary_name).get_metadata_dict()
+        return self._get_binary(binary_name).get_extended_metadata()
 
     @mcp_tool(name="list_binary_sections")
     def list_binary_sections(self, binary_name: str) -> List[Dict[str, Any]]:

@@ -38,8 +38,37 @@ export interface BinarySummary {
   [key: string]: any;
 }
 
+export interface BinaryMetadata {
+  binary_name: string;
+  arch?: string;
+  size?: number;
+  format?: string;
+  image_base?: string;
+  endian?: string;
+  created_at?: string;
+  counts?: {
+    functions: number;
+    imports: number;
+    exports: number;
+    symbols: number;
+    strings: number;
+    segments: number;
+  };
+  hashes?: {
+    sha256?: string;
+    md5?: string;
+    crc32?: string;
+  };
+  libraries?: string[];
+  [key: string]: any;
+}
+
 export const projectApi = {
   getOverview: () => apiClient.get<ProjectOverview>('/project').then(res => res.data),
   listBinaries: (offset = 0, limit = 50) => 
     apiClient.get<BinarySummary[]>('/project/binaries', { params: { offset, limit } }).then(res => res.data),
+};
+
+export const binaryApi = {
+  getMetadata: (name: string) => apiClient.get<BinaryMetadata>(`/binary/${name}`).then(res => res.data),
 };

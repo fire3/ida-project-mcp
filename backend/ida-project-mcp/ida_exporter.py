@@ -32,6 +32,193 @@ except ImportError:
 
 from ida_utils import ProgressTracker, calculate_entropy
 
+def get_binary_info_dict():
+    """Extract basic information about the loaded binary in IDA and return as a dictionary.
+    
+    Returns:
+        dict: A dictionary containing the following structure:
+        {
+            "basic_info": {
+                "binary_name": str,          # 二进制文件名
+                "full_path": str,            # 完整文件路径
+                "file_size": int,            # 文件大小（字节）
+                "processor": str,            # 处理器类型
+                "architecture": str,         # 架构（32位/64位）
+                "entry_point": int,          # 入口点地址
+                "image_base": int           # 镜像基址
+            },
+            "segments": {
+                "segments_list": [           # 段信息列表
+                    {
+                        "name": str,         # 段名
+                        "start_address": int,# 起始地址
+                        "end_address": int,  # 结束地址
+                        "size": int,         # 段大小
+                        "permissions": str   # 权限（RWX组合）
+                    },
+                    ...
+                ],
+                "total_segments": int,       # 总段数
+                "total_segment_size": int    # 总段大小
+            },
+            "functions": {
+                "total_functions": int,      # 总函数数
+                "user_functions": int,       # 用户函数数
+                "library_functions": int,    # 库函数数
+                "average_function_size": int # 平均函数大小
+            },
+            "strings": {
+                "total_strings": int         # 总字符串数
+            },
+            "imports_exports": {
+                "imported_functions": int,   # 导入函数数
+                "exported_functions": int    # 导出函数数
+            },
+            "additional_info": {
+                "file_type": str,           # 文件类型
+                "compiler_name": str,       # 编译器名称
+                "compiler_abbr": str        # 编译器缩写
+            }
+        }
+    """
+    result = {
+        "basic_info": {},
+        "segments": {
+            "segments_list": []
+        },
+        "functions": {},
+        "strings": {},
+        "imports_exports": {},
+        "additional_info": {}
+    }
+    
+    # Get binary path and name
+    binary_path = ida_nalt.get_input_file_path()
+    binary_name = os.path.basename(binary_path)
+    
+    result["basic_info"]["binary_name"] = binary_name
+    result["basic_info"]["full_path"] = binary_path
+    
+    # Get file size
+    try:
+        file_size = os.path.getsize(binary_path)
+        result["basic_info"]["file_size"] = file_size
+    except:
+        result["basic_info"]["file_size"] = None
+    
+    # Get architecture and processor info
+    processor = ida_ida.inf_get_procname()
+    if ida_pro.IDA_SDK_VERSION == 910:
+        bitness = "64-bit" if ida_ida.idainfo_is_64bit() else "32-bit" if ida_ida.idainfo_is_32bit() else "16-bit"
+    else:
+        bitness = "64-bit" if ida_ida.inf_is_64bit() else "32-bit" if ida_ida.inf_is_32bit_exactly() else "16-bit"
+    
+    result["basic_info"]["processor"] = processor
+    result["basic_info"]["architecture"] = bitness
+    
+    # Get entry point and image base
+    result["basic_info"]["entry_point"] = ida_ida.inf_get_start_ea()
+    result["basic_info"]["image_base"] = ida_nalt.get_imagebase()
+    
+    # Get segments information
+    segment_count = 0
+    total_segment_size = 0
+    
+    for seg_ea in idautils.Segments():
+        seg = ida_segment.getseg(seg_ea)
+        if seg:
+            segment_count += 1
+            seg_info = {
+                "name": ida_segment.get_segm_name(seg),
+                "start_address": seg.start_ea,
+                "end_address": seg.end_ea,
+                "size": seg.end_ea - seg.start_ea,
+                "permissions": ""
+            }
+            
+            # Get segment permissions
+            if seg.perm & ida_segment.SEGPERM_READ:
+                seg_info["permissions"] += "R"
+            if seg.perm & ida_segment.SEGPERM_WRITE:
+                seg_info["permissions"] += "W"
+            if seg.perm & ida_segment.SEGPERM_EXEC:
+                seg_info["permissions"] += "X"
+            
+            total_segment_size += seg_info["size"]
+            result["segments"]["segments_list"].append(seg_info)
+    
+    result["segments"]["total_segments"] = segment_count
+    result["segments"]["total_segment_size"] = total_segment_size
+    
+    # Get function information
+    function_count = 0
+    total_func_size = 0
+    lib_functions = 0
+    user_functions = 0
+    
+    for func_ea in idautils.Functions():
+        func = ida_funcs.get_func(func_ea)
+        if func:
+            function_count += 1
+            func_size = func.end_ea - func.start_ea
+            total_func_size += func_size
+            
+            func_name = ida_funcs.get_func_name(func_ea)
+            if func_name and (func_name.startswith('sub_') or not any(c in func_name for c in ['@', '.', '_imp_'])):
+                user_functions += 1
+            else:
+                lib_functions += 1
+    
+    result["functions"]["total_functions"] = function_count
+    result["functions"]["user_functions"] = user_functions
+    result["functions"]["library_functions"] = lib_functions
+    result["functions"]["average_function_size"] = total_func_size // function_count if function_count > 0 else 0
+    
+    # Get strings information
+    string_count = 0
+    for string in idautils.Strings():
+        string_count += 1
+    
+    result["strings"]["total_strings"] = string_count
+    
+    # Get imports and exports
+    import_count = 0
+    for i in range(ida_nalt.get_import_module_qty()):
+        name = ida_nalt.get_import_module_name(i)
+        if not name:
+            break
+        
+        def cb(ea, name, ordinal):
+            nonlocal import_count
+            import_count += 1
+            return True
+        
+        ida_nalt.enum_import_names(i, cb)
+    
+    export_count = 0
+    try:
+        for ordinal in range(ida_entry.get_entry_qty()):
+            entry_ea = ida_entry.get_entry(ordinal)
+            if entry_ea != ida_ida.BADADDR:
+                export_count += 1
+    except:
+        try:
+            export_count = ida_nalt.get_entry_qty()
+        except:
+            export_count = 0
+    
+    result["imports_exports"]["imported_functions"] = import_count
+    result["imports_exports"]["exported_functions"] = export_count
+    
+    # Additional file information
+    result["additional_info"]["file_type"] = ida_loader.get_file_type_name()
+    
+    compiler_id = ida_ida.inf_get_cc_id()
+    result["additional_info"]["compiler_name"] = ida_typeinf.get_compiler_name(compiler_id)
+    result["additional_info"]["compiler_abbr"] = ida_typeinf.get_compiler_abbr(compiler_id)
+    
+    return result
+
 class IDAExporter:
     def __init__(self, db, logger, timer, input_file=None):
         self.db = db
@@ -108,7 +295,7 @@ class IDAExporter:
             meta['endian'] = 'Big endian'
         else:
             meta['endian'] = 'Little endian'
-
+        meta['info'] = get_binary_info_dict()
         meta['created_at'] = str(int(time.time()))
         
         # Libraries
