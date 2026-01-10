@@ -41,151 +41,131 @@ class IDAExporter:
         self.input_file = input_file
 
     def get_binary_info_dict(self):
-        """Extract basic information about the loaded binary in IDA and return as a dictionary.
+        """Extract all metadata about the loaded binary in IDA and return as a complete dictionary matching frontend requirements.
         
         Returns:
-            dict: A dictionary containing the structure with basic_info, segments, functions, etc.
+            dict: A dictionary containing the final metadata structure.
         """
-        result = {
-            "basic_info": {},
-            "segments": {
-                "segments_list": []
-            },
-            "functions": {},
-            "strings": {},
-            "imports_exports": {},
-            "additional_info": {}
-        }
-        
         # Get binary path and name
-        binary_path = ida_nalt.get_input_file_path()
-        binary_name = os.path.basename(binary_path)
+        binary_path = self.input_file or ida_nalt.get_input_file_path()
+        binary_name = os.path.basename(binary_path) if binary_path else "unknown"
+        file_exists = binary_path and os.path.exists(binary_path)
         
-        result["basic_info"]["binary_name"] = binary_name
-        result["basic_info"]["full_path"] = binary_path
+        # Calculate Hashes & Size
+        hashes = {"md5": "", "sha256": "", "crc32": ""}
+        file_size = 0
         
-        # Get file size
-        try:
-            file_size = os.path.getsize(binary_path)
-            result["basic_info"]["file_size"] = file_size
-        except:
-            result["basic_info"]["file_size"] = None
-        
-        # Get architecture and processor info
+        if file_exists:
+            try:
+                with open(binary_path, 'rb') as f:
+                    content = f.read()
+                    hashes['sha256'] = hashlib.sha256(content).hexdigest()
+                    hashes['md5'] = hashlib.md5(content).hexdigest()
+                    hashes['crc32'] = str(zlib.crc32(content))
+                file_size = os.path.getsize(binary_path)
+            except Exception as e:
+                self.log(f"Error calculating hashes: {e}")
+
+        # Architecture & Processor
         processor = ida_ida.inf_get_procname()
         if ida_pro.IDA_SDK_VERSION == 910:
-            bitness = "64-bit" if ida_ida.idainfo_is_64bit() else "32-bit" if ida_ida.idainfo_is_32bit() else "16-bit"
+            is_64 = ida_ida.idainfo_is_64bit()
+            is_32 = ida_ida.idainfo_is_32bit()
         else:
-            bitness = "64-bit" if ida_ida.inf_is_64bit() else "32-bit" if ida_ida.inf_is_32bit_exactly() else "16-bit"
-        
-        result["basic_info"]["processor"] = processor
-        result["basic_info"]["architecture"] = bitness
-        
-        # Get entry point and image base
-        result["basic_info"]["entry_point"] = ida_ida.inf_get_start_ea()
-        result["basic_info"]["image_base"] = ida_nalt.get_imagebase()
-        
-        # Get segments information
+            is_64 = ida_ida.inf_is_64bit()
+            is_32 = ida_ida.inf_is_32bit_exactly()
+            
+        bitness = "64-bit" if is_64 else "32-bit" if is_32 else "16-bit"
+        address_width = "64" if is_64 else "32" if is_32 else "16"
+        endian = "Big endian" if ida_ida.inf_is_be() else "Little endian"
+
+        # Compiler Info
+        compiler_id = ida_ida.inf_get_cc_id()
+        compiler_name = ida_typeinf.get_compiler_name(compiler_id)
+        compiler_abbr = ida_typeinf.get_compiler_abbr(compiler_id)
+
+        # Segments Stats
         segment_count = 0
-        total_segment_size = 0
-        
         for seg_ea in idautils.Segments():
-            seg = ida_segment.getseg(seg_ea)
-            if seg:
-                segment_count += 1
-                seg_info = {
-                    "name": ida_segment.get_segm_name(seg),
-                    "start_address": seg.start_ea,
-                    "end_address": seg.end_ea,
-                    "size": seg.end_ea - seg.start_ea,
-                    "permissions": ""
-                }
-                
-                # Get segment permissions
-                if seg.perm & ida_segment.SEGPERM_READ:
-                    seg_info["permissions"] += "R"
-                if seg.perm & ida_segment.SEGPERM_WRITE:
-                    seg_info["permissions"] += "W"
-                if seg.perm & ida_segment.SEGPERM_EXEC:
-                    seg_info["permissions"] += "X"
-                
-                total_segment_size += seg_info["size"]
-                result["segments"]["segments_list"].append(seg_info)
+            segment_count += 1
         
-        result["segments"]["total_segments"] = segment_count
-        result["segments"]["total_segment_size"] = total_segment_size
-        
-        # Get function information
+        # Functions Stats
         function_count = 0
-        total_func_size = 0
         lib_functions = 0
         user_functions = 0
         
         for func_ea in idautils.Functions():
-            func = ida_funcs.get_func(func_ea)
-            if func:
-                function_count += 1
-                func_size = func.end_ea - func.start_ea
-                total_func_size += func_size
-                
-                func_name = ida_funcs.get_func_name(func_ea)
-                if func_name and (func_name.startswith('sub_') or not any(c in func_name for c in ['@', '.', '_imp_'])):
-                    user_functions += 1
-                else:
-                    lib_functions += 1
+            function_count += 1
+            func_name = ida_funcs.get_func_name(func_ea)
+            # Simple heuristic for user vs lib functions
+            if func_name and (func_name.startswith('sub_') or not any(c in func_name for c in ['@', '.', '_imp_'])):
+                user_functions += 1
+            else:
+                lib_functions += 1
         
-        result["functions"]["total_functions"] = function_count
-        result["functions"]["user_functions"] = user_functions
-        result["functions"]["library_functions"] = lib_functions
-        result["functions"]["average_function_size"] = total_func_size // function_count if function_count > 0 else 0
-        
-        # Get strings information
+        # Strings Stats
         string_count = 0
-        for string in idautils.Strings():
+        for _ in idautils.Strings():
             string_count += 1
         
-        result["strings"]["total_strings"] = string_count
-        
-        # Get imports and exports
+        # Imports & Exports Stats
         import_count = 0
         for i in range(ida_nalt.get_import_module_qty()):
-            name = ida_nalt.get_import_module_name(i)
-            if not name:
-                break
-            
             def cb(ea, name, ordinal):
                 nonlocal import_count
                 import_count += 1
                 return True
-            
             ida_nalt.enum_import_names(i, cb)
         
         export_count = 0
         try:
-            for ordinal in range(ida_entry.get_entry_qty()):
-                entry_ea = ida_entry.get_entry(ordinal)
-                if entry_ea != ida_ida.BADADDR:
-                    export_count += 1
+            for _ in idautils.Entries():
+                export_count += 1
         except:
             try:
                 export_count = ida_nalt.get_entry_qty()
             except:
                 export_count = 0
+
+        # Libraries List
+        libraries = []
+        for i in range(ida_nalt.get_import_module_qty()):
+            name = ida_nalt.get_import_module_name(i)
+            if name:
+                libraries.append(name)
+
+        # Construct Final JSON Structure
+        final_meta = {
+            "binary_name": binary_name,
+            "arch": bitness,
+            "processor": processor,
+            "format": ida_loader.get_file_type_name(),
+            "size": file_size,
+            "image_base": hex(ida_nalt.get_imagebase()),
+            "endian": endian,
+            "address_width": address_width,
+            "created_at": datetime.datetime.now().isoformat(),
+            "counts": {
+                "functions": function_count,
+                "user_functions": user_functions,
+                "library_functions": lib_functions,
+                "imports": import_count,
+                "exports": export_count,
+                "strings": string_count,
+                "segments": segment_count,
+                "symbols": ida_name.get_nlist_size()
+            },
+            "hashes": hashes,
+            "compiler": {
+                "compiler_name": compiler_name,
+                "compiler_abbr": compiler_abbr
+            },
+            "libraries": libraries
+        }
         
-        result["imports_exports"]["imported_functions"] = import_count
-        result["imports_exports"]["exported_functions"] = export_count
-        
-        # Additional file information
-        result["additional_info"]["file_type"] = ida_loader.get_file_type_name()
-        
-        compiler_id = ida_ida.inf_get_cc_id()
-        result["additional_info"]["compiler_name"] = ida_typeinf.get_compiler_name(compiler_id)
-        result["additional_info"]["compiler_abbr"] = ida_typeinf.get_compiler_abbr(compiler_id)
-        
-        return result
+        return final_meta
 
     def safe_int(self, val):
-
         if val is None: return None
         if val >= (1 << 63):
             val -= (1 << 64)
@@ -217,56 +197,8 @@ class IDAExporter:
         self.timer.start_step("Metadata")
         self.log("Exporting metadata...")
         
-        # Gather all data
-        input_path = self.input_file or ida_nalt.get_input_file_path()
-        file_exists = input_path and os.path.exists(input_path)
-        
-        # Basic Info
-        basic_info = self.get_binary_info_dict()
-        
-        # Calculate Hashes
-        hashes = {"md5": "", "sha256": "", "crc32": ""}
-        file_size = 0
-        
-        if file_exists:
-            try:
-                with open(input_path, 'rb') as f:
-                    content = f.read()
-                    hashes['sha256'] = hashlib.sha256(content).hexdigest()
-                    hashes['md5'] = hashlib.md5(content).hexdigest()
-                    hashes['crc32'] = str(zlib.crc32(content))
-                file_size = os.path.getsize(input_path)
-            except Exception as e:
-                self.log(f"Error calculating hashes: {e}")
-        
-        # Construct Final JSON Structure (matching Frontend requirements)
-        final_meta = {
-            "binary_name": basic_info["basic_info"]["binary_name"],
-            "arch": basic_info["basic_info"]["architecture"],
-            "processor": basic_info["basic_info"]["processor"],
-            "format": basic_info["additional_info"]["file_type"],
-            "size": file_size,
-            "image_base": hex(basic_info["basic_info"]["image_base"]),
-            "endian": "Big endian" if ida_ida.inf_is_be() else "Little endian",
-            "address_width": "64" if ida_ida.inf_is_64bit() else "32" if ida_ida.inf_is_32bit_exactly() else "16",
-            "created_at": datetime.datetime.now().isoformat(),
-            "counts": {
-                "functions": basic_info["functions"]["total_functions"],
-                "user_functions": basic_info["functions"]["user_functions"],
-                "library_functions": basic_info["functions"]["library_functions"],
-                "imports": basic_info["imports_exports"]["imported_functions"],
-                "exports": basic_info["imports_exports"]["exported_functions"],
-                "strings": basic_info["strings"]["total_strings"],
-                "segments": basic_info["segments"]["total_segments"],
-                "symbols": ida_name.get_nlist_size() # Dynamic
-            },
-            "hashes": hashes,
-            "compiler": {
-                "compiler_name": basic_info["additional_info"]["compiler_name"],
-                "compiler_abbr": basic_info["additional_info"]["compiler_abbr"]
-            },
-            "libraries": [ida_nalt.get_import_module_name(i) for i in range(ida_nalt.get_import_module_qty()) if ida_nalt.get_import_module_name(i)]
-        }
+        # Get the complete metadata dictionary
+        final_meta = self.get_binary_info_dict()
 
         # Save as single JSON blob
         self.db.insert_metadata_json(json.dumps(final_meta))
