@@ -107,25 +107,25 @@ export function FunctionDetail({ binaryName, address, onNavigate }: FunctionDeta
         )}
 
         {view === 'xrefs' && (
-          <div className="flex h-full divide-x">
+          <div className="flex h-full divide-x divide-border">
             {/* Callers */}
             <div className="flex-1 flex flex-col min-w-0">
-              <div className="p-3 border-b font-semibold flex items-center bg-muted/10">
-                <ArrowLeft className="mr-2 h-4 w-4 text-blue-500" />
+              <div className="p-3 border-b border-border font-semibold flex items-center bg-muted/30">
+                <ArrowLeft className="mr-2 h-4 w-4 text-blue-600 dark:text-blue-400" />
                 Callers ({callers?.length || 0})
               </div>
               <div className="flex-1 overflow-auto p-0">
                 {isCallersLoading ? (
                   <div className="p-4 text-muted-foreground">Loading...</div>
                 ) : (
-                  <div className="divide-y">
+                  <div className="divide-y divide-border">
                     {callers?.map((func) => (
                       <div
                         key={func.address}
                         className="p-3 hover:bg-muted/50 cursor-pointer transition-colors group"
                         onClick={() => onNavigate?.(func.address)}
                       >
-                        <div className="font-mono text-sm font-medium text-primary truncate group-hover:text-blue-500">
+                        <div className="font-mono text-sm font-medium text-foreground truncate group-hover:text-blue-600 dark:group-hover:text-blue-400">
                           {func.demangled_name || func.name}
                         </div>
                         <div className="text-xs text-muted-foreground mt-1 font-mono">
@@ -145,22 +145,22 @@ export function FunctionDetail({ binaryName, address, onNavigate }: FunctionDeta
 
             {/* Callees */}
             <div className="flex-1 flex flex-col min-w-0">
-              <div className="p-3 border-b font-semibold flex items-center bg-muted/10">
-                <ArrowRight className="mr-2 h-4 w-4 text-green-500" />
+              <div className="p-3 border-b border-border font-semibold flex items-center bg-muted/30">
+                <ArrowRight className="mr-2 h-4 w-4 text-green-600 dark:text-green-400" />
                 Callees ({callees?.length || 0})
               </div>
               <div className="flex-1 overflow-auto p-0">
                 {isCalleesLoading ? (
                   <div className="p-4 text-muted-foreground">Loading...</div>
                 ) : (
-                  <div className="divide-y">
+                  <div className="divide-y divide-border">
                     {callees?.map((func) => (
                       <div
                         key={func.address}
                         className="p-3 hover:bg-muted/50 cursor-pointer transition-colors group"
                         onClick={() => onNavigate?.(func.address)}
                       >
-                        <div className="font-mono text-sm font-medium text-primary truncate group-hover:text-green-500">
+                        <div className="font-mono text-sm font-medium text-foreground truncate group-hover:text-green-600 dark:group-hover:text-green-400">
                           {func.demangled_name || func.name}
                         </div>
                         <div className="text-xs text-muted-foreground mt-1 font-mono">
