@@ -4,6 +4,7 @@ import { MainLayout } from './layouts/MainLayout';
 import { Dashboard } from './pages/Dashboard';
 import { BinaryLayout } from './layouts/BinaryLayout';
 import { BinaryOverview } from './pages/BinaryOverview';
+import { FunctionsBrowser } from './pages/FunctionsBrowser';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -34,7 +35,7 @@ function App() {
             <Route path="binary/:binaryName" element={<BinaryLayout />}>
               <Route index element={<Navigate to="overview" replace />} />
               <Route path="overview" element={<BinaryOverview />} />
-              <Route path="functions" element={<Placeholder title="Functions Browser" />} />
+              <Route path="functions" element={<FunctionsBrowser />} />
               <Route path="strings" element={<Placeholder title="Strings Browser" />} />
               <Route path="imports" element={<Placeholder title="Imports" />} />
               <Route path="exports" element={<Placeholder title="Exports" />} />

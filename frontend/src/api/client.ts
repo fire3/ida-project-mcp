@@ -71,6 +71,23 @@ export interface BinaryMetadata {
   [key: string]: any;
 }
 
+export interface BinaryFunction {
+  name: string;
+  demangled_name?: string;
+  address: string;
+  start_address: string;
+  end_address: string;
+  size: number;
+  is_thunk: boolean;
+  is_library: boolean;
+}
+
+export interface PseudocodeResult {
+  function_address: string;
+  name: string;
+  pseudo_code: string;
+}
+
 export const projectApi = {
   getOverview: () => apiClient.get<ProjectOverview>('/project').then(res => res.data),
   listBinaries: (offset = 0, limit = 50) => 
@@ -79,4 +96,13 @@ export const projectApi = {
 
 export const binaryApi = {
   getMetadata: (name: string) => apiClient.get<BinaryMetadata>(`/binary/${name}`).then(res => res.data),
+  
+  listFunctions: (name: string, query?: string, offset = 0, limit = 50) => 
+    apiClient.get<BinaryFunction[]>(`/binary/${name}/functions`, { params: { query, offset, limit } }).then(res => res.data),
+    
+  getFunctionPseudocode: (name: string, address: string) =>
+    apiClient.get<PseudocodeResult>(`/binary/${name}/function/${encodeURIComponent(address)}/pseudocode`).then(res => res.data),
+    
+  getFunctionDisassembly: (name: string, address: string) =>
+    apiClient.get<string>(`/binary/${name}/function/${encodeURIComponent(address)}/disassembly`).then(res => res.data),
 };

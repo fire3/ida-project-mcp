@@ -24,7 +24,7 @@ export function BinaryOverview() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="p-6 space-y-6">
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
          {/* Basic Info */}
          <Card className="col-span-1 md:col-span-2">
