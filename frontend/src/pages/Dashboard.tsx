@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { projectApi } from '../api/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Button } from '../components/ui/button';
 import { FileCode, Activity, Database } from 'lucide-react';
 import { Link } from 'react-router-dom';
 

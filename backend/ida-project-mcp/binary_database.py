@@ -40,14 +40,13 @@ class BinaryDatabase:
     def create_schema(self):
         self.log("Creating schema...")
         
-        # 6.0 Metadata
+        # 6.0 Metadata (Single JSON Blob)
         self.cursor.execute("""
-            CREATE TABLE IF NOT EXISTS metadata (
-                key TEXT PRIMARY KEY,
-                value TEXT
+            CREATE TABLE IF NOT EXISTS metadata_json (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                content TEXT
             )
         """)
-        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_metadata_key ON metadata(key)")
 
         # 6.1 Segments
         self.cursor.execute("""
@@ -240,9 +239,11 @@ class BinaryDatabase:
 
     # Data Insertion Methods
     
-    def insert_metadata(self, meta_dict):
-        data = [(k, v) for k, v in meta_dict.items()]
-        self.cursor.executemany("INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)", data)
+    def insert_metadata_json(self, json_content):
+        self.cursor.execute("""
+            INSERT OR REPLACE INTO metadata_json (id, content)
+            VALUES (1, ?)
+        """, (json_content,))
         self.conn.commit()
 
     def insert_segments(self, segments_data):

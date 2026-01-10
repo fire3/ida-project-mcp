@@ -60,6 +60,10 @@ export function BinaryOverview() {
                     <span className="text-muted-foreground block">Analysis Date</span>
                     <span className="font-medium">{metadata?.created_at ? new Date(metadata.created_at).toLocaleString() : 'N/A'}</span>
                 </div>
+                 <div>
+                    <span className="text-muted-foreground block">Compiler</span>
+                    <span className="font-medium">{metadata?.compiler?.compiler_name || 'N/A'}</span>
+                </div>
             </CardContent>
          </Card>
 
@@ -70,8 +74,24 @@ export function BinaryOverview() {
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
                 <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Functions</span>
+                    <span className="text-muted-foreground">Total Functions</span>
                     <span className="font-bold bg-secondary px-2 py-1 rounded">{metadata?.counts?.functions ?? 0}</span>
+                </div>
+                {metadata?.counts?.user_functions !== undefined && (
+                    <div className="flex justify-between items-center pl-3 border-l-2">
+                        <span className="text-muted-foreground text-xs">User Functions</span>
+                        <span className="font-medium text-xs">{metadata?.counts?.user_functions}</span>
+                    </div>
+                )}
+                {metadata?.counts?.library_functions !== undefined && (
+                     <div className="flex justify-between items-center pl-3 border-l-2">
+                        <span className="text-muted-foreground text-xs">Library Functions</span>
+                        <span className="font-medium text-xs">{metadata?.counts?.library_functions}</span>
+                    </div>
+                )}
+                 <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Segments</span>
+                    <span className="font-bold bg-secondary px-2 py-1 rounded">{metadata?.counts?.segments ?? 0}</span>
                 </div>
                  <div className="flex justify-between items-center">
                     <span className="text-muted-foreground">Imports</span>

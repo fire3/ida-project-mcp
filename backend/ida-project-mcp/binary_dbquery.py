@@ -121,7 +121,30 @@ class BinaryDbQuery:
         return out
 
     def get_extended_metadata(self):
+        # 1. Try to fetch from single JSON blob (metadata_json)
+        if self._table_exists("metadata_json"):
+            row = self._fetchone("SELECT content FROM metadata_json WHERE id=1")
+            if row and row["content"]:
+                try:
+                    return json.loads(row["content"])
+                except Exception:
+                    pass
+
+        # 2. Fallback to legacy metadata table
         meta = self.get_metadata_dict()
+        if not meta:
+             return {}
+        
+        # ... (Minimal reconstruction logic if JSON blob is missing)
+        # For now, let's just return what we have from legacy or empty
+        # If the user wants extreme simplification, we should encourage re-export.
+        
+        # BUT, to keep existing DBs working without re-export, we might keep SOME fallback logic?
+        # User said "Simplify implementation". I will assume re-export is acceptable or preferred.
+        # But for robustness, I'll leave a minimal reconstruction path if needed, OR just return the legacy meta dict 
+        # enriched with dynamic counts.
+        
+        # Let's keep the fallback logic minimal but functional for legacy data
         
         # Arch
         arch = meta.get("arch")
@@ -147,7 +170,7 @@ class BinaryDbQuery:
             except Exception:
                 size = 0
         
-        # Counts
+        # Counts (Legacy method)
         counts = {
             "functions": self._count("SELECT COUNT(1) FROM functions") if self._table_exists("functions") else 0,
             "imports": self._count("SELECT COUNT(1) FROM imports") if self._table_exists("imports") else 0,
@@ -157,24 +180,6 @@ class BinaryDbQuery:
             "segments": self._count("SELECT COUNT(1) FROM sections") if self._table_exists("sections") else 0,
         }
         
-        # Date formatting
-        created_at = meta.get("created_at")
-        if created_at and str(created_at).isdigit():
-            import datetime
-            try:
-                ts = int(created_at)
-                dt = datetime.datetime.fromtimestamp(ts)
-                created_at = dt.isoformat()
-            except Exception:
-                pass
-        elif not created_at and self.binary_path and os.path.exists(self.binary_path):
-             import datetime
-             try:
-                 ts = os.path.getmtime(self.binary_path)
-                 created_at = datetime.datetime.fromtimestamp(ts).isoformat()
-             except Exception:
-                 pass
-
         return {
             "binary_name": self.display_name,
             "arch": arch,
@@ -182,7 +187,7 @@ class BinaryDbQuery:
             "format": meta.get("format", "unknown"),
             "image_base": meta.get("image_base"),
             "endian": meta.get("endian"),
-            "created_at": created_at,
+            "created_at": meta.get("created_at"),
             "counts": counts,
             "hashes": {
                 "sha256": meta.get("sha256"),
@@ -192,6 +197,7 @@ class BinaryDbQuery:
             "libraries": meta.get("libraries"),
             "processor": meta.get("processor"),
             "address_width": meta.get("address_width"),
+            "compiler": {},
         }
 
     def get_summary(self):
