@@ -12,11 +12,29 @@ except ImportError:
     ida_idp = None
 
 class Logger:
-    def __init__(self, verbose=False):
+    def __init__(self, verbose=False, plain=False):
         self.verbose = verbose
+        self.plain = plain
         self.logs = []
 
     def log(self, msg, level=None):
+        if self.plain:
+            line = msg
+            if level:
+                line = f"[{level}] {msg}"
+            
+            self.logs.append(line)
+            print(line)
+            sys.stdout.flush()
+            
+            # Still log to IDA window if available
+            if ida_kernwin:
+                try:
+                    ida_kernwin.msg(line + "\n")
+                except:
+                    pass
+            return
+
         timestamp = time.strftime("%H:%M:%S", time.localtime())
         if level:
             formatted_msg = f"[{timestamp}] [{level}] {msg}"
@@ -24,10 +42,11 @@ class Logger:
             formatted_msg = f"[{timestamp}] {msg}"
         self.logs.append(formatted_msg)
         
+        # Clean output for console: [HH:MM:SS] msg
         if level:
-            line = f"[IDA {timestamp}] [{level}] {msg}"
+            line = f"[{timestamp}] [{level}] {msg}"
         else:
-            line = f"[IDA {timestamp}] {msg}"
+            line = f"[{timestamp}] {msg}"
 
         print(line)
         sys.stdout.flush()

@@ -326,7 +326,7 @@ class ExportOrchestrator:
         current_script_dir = os.path.dirname(os.path.abspath(__file__))
         ida_export_script = os.path.join(current_script_dir, "ida-export-worker.py")
         
-        master_cmd = f"python \"{ida_export_script}\" \"{master_input}\" --output \"{output_db}\" --parallel-master --dump-funcs \"{funcs_json}\" --save-idb \"{analysis_base}\" --perf-json \"{master_perf_json}\" --no-perf-report --fast"
+        master_cmd = f"python \"{ida_export_script}\" \"{master_input}\" --output \"{output_db}\" --parallel-master --dump-funcs \"{funcs_json}\" --save-idb \"{analysis_base}\" --perf-json \"{master_perf_json}\" --no-perf-report --fast --plain-log"
             
         result = self.run_command(master_cmd, stream_output=True, context="MASTER")
         
@@ -426,7 +426,7 @@ class ExportOrchestrator:
 
             cmd = f"python \"{ida_export_script}\" \"{worker_input}\" --output \"{worker_db}\" --parallel-worker \"{chunk_file}\""
             perf_json = os.path.join(temp_dir, f"perf_worker_{i}.json")
-            cmd += f" --perf-json \"{perf_json}\" --no-perf-report"
+            cmd += f" --perf-json \"{perf_json}\" --no-perf-report --plain-log"
             worker_cmds.append(cmd)
             worker_perf_paths.append(perf_json)
             self.logger.log(f"Worker {i}: funcs={chunk_size} db={worker_db}", context="ORCHESTRATOR")

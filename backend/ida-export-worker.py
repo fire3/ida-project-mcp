@@ -48,6 +48,7 @@ def main():
     parser.add_argument("--save-idb", help="Save analyzed IDB/I64 to this path (optional; extension auto-chosen if omitted)")
     parser.add_argument("--perf-json", help="Write performance stats JSON to this path")
     parser.add_argument("--no-perf-report", action="store_true", help="Do not print the textual performance summary")
+    parser.add_argument("--plain-log", action="store_true", help="Use plain logging (no timestamps, just messages)")
     
     # In IDA, argv[0] is the executable or the script. 
     # If run via "File > Script file", sys.argv is usually just the script path (or empty in some versions).
@@ -56,7 +57,7 @@ def main():
     args, unknown = parser.parse_known_args()
 
     # Initialize helpers
-    logger = ida_utils.Logger(verbose=args.verbose)
+    logger = ida_utils.Logger(verbose=args.verbose, plain=args.plain_log)
     timer = ida_utils.PerformanceTimer()
 
     # Initialize IDA if needed
