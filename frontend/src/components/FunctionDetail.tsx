@@ -112,17 +112,20 @@ export function FunctionDetail({ binaryName, address, onNavigate }: FunctionDeta
               <div className="p-4 text-muted-foreground text-sm">Loading...</div>
             ) : (
               <div className="divide-y divide-border">
-                {callers?.map((func) => (
+                {callers?.map((ref) => (
                   <div
-                    key={func.address}
+                    key={`${ref.caller_address}-${ref.call_site_address}`}
                     className="p-3 hover:bg-muted/50 cursor-pointer transition-colors group"
-                    onClick={() => onNavigate?.(func.address)}
+                    onClick={() => onNavigate?.(ref.caller_address)}
                   >
                     <div className="font-mono text-sm font-medium text-foreground truncate group-hover:text-blue-600 dark:group-hover:text-blue-400">
-                      {func.demangled_name || func.name}
+                      {ref.caller_name || ref.caller_address}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1 font-mono">
-                      {func.address}
+                      {ref.caller_address}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1 font-mono">
+                      callsite {ref.call_site_address}
                     </div>
                   </div>
                 ))}
@@ -147,17 +150,20 @@ export function FunctionDetail({ binaryName, address, onNavigate }: FunctionDeta
               <div className="p-4 text-muted-foreground text-sm">Loading...</div>
             ) : (
               <div className="divide-y divide-border">
-                {callees?.map((func) => (
+                {callees?.map((ref) => (
                   <div
-                    key={func.address}
+                    key={`${ref.callee_address}-${ref.call_site_address}`}
                     className="p-3 hover:bg-muted/50 cursor-pointer transition-colors group"
-                    onClick={() => onNavigate?.(func.address)}
+                    onClick={() => onNavigate?.(ref.callee_address)}
                   >
                     <div className="font-mono text-sm font-medium text-foreground truncate group-hover:text-green-600 dark:group-hover:text-green-400">
-                      {func.demangled_name || func.name}
+                      {ref.callee_name || ref.callee_address}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1 font-mono">
-                      {func.address}
+                      {ref.callee_address}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1 font-mono">
+                      callsite {ref.call_site_address}{ref.call_type ? ` • ${ref.call_type}` : ''}
                     </div>
                   </div>
                 ))}

@@ -35,7 +35,7 @@ export interface BinarySummary {
   size?: number;
   function_count?: number;
   created_at?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface BinaryMetadata {
@@ -68,7 +68,7 @@ export interface BinaryMetadata {
     compiler_abbr?: string;
   };
   libraries?: string[];
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface BinaryFunction {
@@ -80,6 +80,19 @@ export interface BinaryFunction {
   size: number;
   is_thunk: boolean;
   is_library: boolean;
+}
+
+export interface FunctionCallerRef {
+  call_site_address: string;
+  caller_address: string;
+  caller_name?: string | null;
+}
+
+export interface FunctionCalleeRef {
+  call_site_address: string;
+  callee_address: string;
+  callee_name?: string | null;
+  call_type?: string | null;
 }
 
 export interface PseudocodeResult {
@@ -107,14 +120,14 @@ export const binaryApi = {
     apiClient.get<string>(`/binary/${name}/function/${encodeURIComponent(address)}/disassembly`).then(res => res.data),
 
   getFunctionCallers: (name: string, address: string, depth?: number, limit?: number) =>
-    apiClient.get<BinaryFunction[]>(`/binary/${name}/function/${encodeURIComponent(address)}/callers`, { params: { depth, limit } }).then(res => res.data),
+    apiClient.get<FunctionCallerRef[]>(`/binary/${name}/function/${encodeURIComponent(address)}/callers`, { params: { depth, limit } }).then(res => res.data),
 
   getFunctionCallees: (name: string, address: string, depth?: number, limit?: number) =>
-    apiClient.get<BinaryFunction[]>(`/binary/${name}/function/${encodeURIComponent(address)}/callees`, { params: { depth, limit } }).then(res => res.data),
+    apiClient.get<FunctionCalleeRef[]>(`/binary/${name}/function/${encodeURIComponent(address)}/callees`, { params: { depth, limit } }).then(res => res.data),
     
   getXrefsTo: (name: string, address: string, offset = 0, limit = 50) =>
-    apiClient.get<any[]>(`/binary/${name}/xrefs/to/${encodeURIComponent(address)}`, { params: { offset, limit } }).then(res => res.data),
+    apiClient.get<unknown[]>(`/binary/${name}/xrefs/to/${encodeURIComponent(address)}`, { params: { offset, limit } }).then(res => res.data),
 
   getXrefsFrom: (name: string, address: string, offset = 0, limit = 50) =>
-    apiClient.get<any[]>(`/binary/${name}/xrefs/from/${encodeURIComponent(address)}`, { params: { offset, limit } }).then(res => res.data),
+    apiClient.get<unknown[]>(`/binary/${name}/xrefs/from/${encodeURIComponent(address)}`, { params: { offset, limit } }).then(res => res.data),
 };
