@@ -41,6 +41,8 @@ export interface BinarySummary {
 export interface BinaryMetadata {
   binary_name: string;
   arch?: string;
+  processor?: string;
+  address_width?: string;
   size?: number;
   format?: string;
   image_base?: string;
@@ -48,6 +50,8 @@ export interface BinaryMetadata {
   created_at?: string;
   counts?: {
     functions: number;
+    user_functions?: number;
+    library_functions?: number;
     imports: number;
     exports: number;
     symbols: number;
@@ -58,6 +62,10 @@ export interface BinaryMetadata {
     sha256?: string;
     md5?: string;
     crc32?: string;
+  };
+  compiler?: {
+    compiler_name?: string;
+    compiler_abbr?: string;
   };
   libraries?: string[];
   [key: string]: any;

@@ -105,160 +105,46 @@ class BinaryDbQuery:
         except Exception:
             return 0
 
-    def get_metadata_dict(self):
-        if not self._table_exists("metadata"):
-            return {}
-        rows = self._fetchall("SELECT key, value FROM metadata")
-        out = {}
-        for r in rows:
-            out[str(r["key"])] = r["value"]
-        libs = out.get("libraries")
-        if isinstance(libs, str):
+    def _maybe_parse_json(self, value):
+        if not isinstance(value, str):
+            return value
+        s = value.strip()
+        if not s:
+            return value
+        if (s.startswith("{") and s.endswith("}")) or (s.startswith("[") and s.endswith("]")):
             try:
-                out["libraries"] = json.loads(libs)
+                return json.loads(s)
             except Exception:
-                pass
-        return out
+                return value
+        return value
 
-    def get_extended_metadata(self):
-        # 1. Try to fetch from single JSON blob (metadata_json)
+    def get_metadata_dict(self):
         if self._table_exists("metadata_json"):
             row = self._fetchone("SELECT content FROM metadata_json WHERE id=1")
-            if row and row["content"]:
+            content = row["content"] if row else None
+            if not content:
+                return {}
+            try:
+                meta = json.loads(content) if isinstance(content, str) else content
+            except Exception:
+                return {}
+            return meta if isinstance(meta, dict) else {}
+
+        if self._table_exists("metadata"):
+            rows = self._fetchall("SELECT key, value FROM metadata")
+            out = {}
+            for r in rows:
+                k = str(r["key"])
+                out[k] = self._maybe_parse_json(r["value"])
+            libs = out.get("libraries")
+            if isinstance(libs, str):
                 try:
-                    return json.loads(row["content"])
+                    out["libraries"] = json.loads(libs)
                 except Exception:
                     pass
+            return out
 
-        # 2. Fallback to legacy metadata table
-        meta = self.get_metadata_dict()
-        if not meta:
-             return {}
-        
-        # ... (Minimal reconstruction logic if JSON blob is missing)
-        # For now, let's just return what we have from legacy or empty
-        # If the user wants extreme simplification, we should encourage re-export.
-        
-        # BUT, to keep existing DBs working without re-export, we might keep SOME fallback logic?
-        # User said "Simplify implementation". I will assume re-export is acceptable or preferred.
-        # But for robustness, I'll leave a minimal reconstruction path if needed, OR just return the legacy meta dict 
-        # enriched with dynamic counts.
-        
-        # Let's keep the fallback logic minimal but functional for legacy data
-        
-        # Arch
-        arch = meta.get("arch")
-        if not arch:
-            proc = meta.get("processor", "unknown")
-            width = meta.get("address_width", "")
-            if width:
-                arch = f"{proc} ({width}-bit)"
-            else:
-                arch = proc
-        
-        # Size
-        size = meta.get("size")
-        if size is None and self.binary_path and os.path.exists(self.binary_path):
-             try:
-                size = os.path.getsize(self.binary_path)
-             except Exception:
-                pass
-        
-        if size is not None:
-            try:
-                size = int(size)
-            except Exception:
-                size = 0
-        
-        # Counts (Legacy method)
-        counts = {
-            "functions": self._count("SELECT COUNT(1) FROM functions") if self._table_exists("functions") else 0,
-            "imports": self._count("SELECT COUNT(1) FROM imports") if self._table_exists("imports") else 0,
-            "exports": self._count("SELECT COUNT(1) FROM exports") if self._table_exists("exports") else 0,
-            "symbols": self._count("SELECT COUNT(1) FROM symbols") if self._table_exists("symbols") else 0,
-            "strings": self._count("SELECT COUNT(1) FROM strings") if self._table_exists("strings") else 0,
-            "segments": self._count("SELECT COUNT(1) FROM sections") if self._table_exists("sections") else 0,
-        }
-        
-        return {
-            "binary_name": self.display_name,
-            "arch": arch,
-            "size": size,
-            "format": meta.get("format", "unknown"),
-            "image_base": meta.get("image_base"),
-            "endian": meta.get("endian"),
-            "created_at": meta.get("created_at"),
-            "counts": counts,
-            "hashes": {
-                "sha256": meta.get("sha256"),
-                "md5": meta.get("md5"),
-                "crc32": meta.get("crc32"),
-            },
-            "libraries": meta.get("libraries"),
-            "processor": meta.get("processor"),
-            "address_width": meta.get("address_width"),
-            "compiler": {},
-        }
-
-    def get_summary(self):
-        meta = self.get_metadata_dict()
-        
-        # Arch
-        arch = meta.get("arch")
-        if not arch:
-            proc = meta.get("processor", "unknown")
-            width = meta.get("address_width", "")
-            if width:
-                arch = f"{proc} ({width}-bit)"
-            else:
-                arch = proc
-        
-        # Size
-        size = meta.get("size")
-        if size is None and self.binary_path and os.path.exists(self.binary_path):
-             try:
-                size = os.path.getsize(self.binary_path)
-             except Exception:
-                pass
-        
-        if size is not None:
-            try:
-                size = int(size)
-            except Exception:
-                size = 0
-        
-        # Function count
-        func_count = 0
-        if self._table_exists("functions"):
-            func_count = self._count("SELECT COUNT(1) FROM functions")
-            
-        # Created At
-        created_at = meta.get("created_at")
-        # If it's a timestamp (digits), convert to ISO
-        if created_at and str(created_at).isdigit():
-            import datetime
-            try:
-                ts = int(created_at)
-                dt = datetime.datetime.fromtimestamp(ts)
-                created_at = dt.isoformat()
-            except Exception:
-                pass
-        elif not created_at and self.binary_path and os.path.exists(self.binary_path):
-             import datetime
-             try:
-                 ts = os.path.getmtime(self.binary_path)
-                 created_at = datetime.datetime.fromtimestamp(ts).isoformat()
-             except Exception:
-                 pass
-        
-        return {
-            "binary_name": self.display_name,
-            "arch": arch,
-            "size": size,
-            "function_count": func_count,
-            "created_at": created_at,
-            "file_format": meta.get("format", "unknown"),
-        }
+        return {}
 
     def get_capabilities(self):
         has_pseudo = self._table_exists("pseudocode") and self._count("SELECT COUNT(1) FROM pseudocode") > 0
@@ -277,6 +163,55 @@ class BinaryDbQuery:
             "demangle": bool(self._table_exists("symbols")),
             "patching": False,
         }
+
+    def get_summary(self):
+        meta = self.get_metadata_dict() or {}
+        counts = meta.get("counts") if isinstance(meta, dict) else None
+        if not isinstance(counts, dict):
+            counts = {}
+        return {
+            "binary_name": self.display_name,
+            "sha256": (meta.get("hashes") or {}).get("sha256") if isinstance(meta, dict) else None,
+            "arch": meta.get("arch") if isinstance(meta, dict) else None,
+            "file_format": meta.get("format") if isinstance(meta, dict) else None,
+            "size": meta.get("size") if isinstance(meta, dict) else None,
+            "created_at": meta.get("created_at") if isinstance(meta, dict) else None,
+            "function_count": counts.get("functions"),
+        }
+
+    def get_extended_metadata(self):
+        meta = self.get_metadata_dict() or {}
+        if not isinstance(meta, dict):
+            meta = {}
+
+        counts = meta.get("counts")
+        if not isinstance(counts, dict):
+            counts = {}
+
+        def _ensure_count(key, table, where=None, params=()):
+            if counts.get(key) is not None:
+                return
+            if not self._table_exists(table):
+                return
+            q = f"SELECT COUNT(1) FROM {table}"
+            if where:
+                q += f" WHERE {where}"
+            counts[key] = self._count(q, params)
+
+        _ensure_count("functions", "functions")
+        _ensure_count("user_functions", "functions", "is_library=0")
+        _ensure_count("library_functions", "functions", "is_library=1")
+        _ensure_count("imports", "imports")
+        _ensure_count("exports", "exports")
+        _ensure_count("strings", "strings")
+        _ensure_count("segments", "segments")
+        _ensure_count("symbols", "symbols")
+
+        meta["counts"] = counts
+        if meta.get("binary_name") is None:
+            meta["binary_name"] = self.display_name
+        return meta
+
 
     def list_sections(self):
         if not self._table_exists("sections"):
