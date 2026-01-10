@@ -31,7 +31,7 @@ export function FunctionsBrowser() {
   return (
     <div className="flex h-full">
       {/* Functions List */}
-      <div className="w-1/3 min-w-[300px] border-r flex flex-col bg-background">
+      <div className="w-[250px] border-r flex flex-col bg-background">
         <div className="p-4 border-b space-y-2">
           <div className="relative">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
