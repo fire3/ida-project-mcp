@@ -105,4 +105,16 @@ export const binaryApi = {
     
   getFunctionDisassembly: (name: string, address: string) =>
     apiClient.get<string>(`/binary/${name}/function/${encodeURIComponent(address)}/disassembly`).then(res => res.data),
+
+  getFunctionCallers: (name: string, address: string, depth?: number, limit?: number) =>
+    apiClient.get<BinaryFunction[]>(`/binary/${name}/function/${encodeURIComponent(address)}/callers`, { params: { depth, limit } }).then(res => res.data),
+
+  getFunctionCallees: (name: string, address: string, depth?: number, limit?: number) =>
+    apiClient.get<BinaryFunction[]>(`/binary/${name}/function/${encodeURIComponent(address)}/callees`, { params: { depth, limit } }).then(res => res.data),
+    
+  getXrefsTo: (name: string, address: string, offset = 0, limit = 50) =>
+    apiClient.get<any[]>(`/binary/${name}/xrefs/to/${encodeURIComponent(address)}`, { params: { offset, limit } }).then(res => res.data),
+
+  getXrefsFrom: (name: string, address: string, offset = 0, limit = 50) =>
+    apiClient.get<any[]>(`/binary/${name}/xrefs/from/${encodeURIComponent(address)}`, { params: { offset, limit } }).then(res => res.data),
 };

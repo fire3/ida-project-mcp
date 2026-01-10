@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { binaryApi } from '../api/client';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
-import { Search, Code, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { FunctionDetail } from '../components/FunctionDetail';
 
 export function FunctionsBrowser() {
   const { binaryName } = useParams<{ binaryName: string }>();
@@ -97,66 +98,15 @@ export function FunctionsBrowser() {
       {/* Function Detail */}
       <div className="flex-1 flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
         {selectedAddress ? (
-          <FunctionDetail binaryName={binaryName!} address={selectedAddress} />
+          <FunctionDetail 
+            binaryName={binaryName!} 
+            address={selectedAddress} 
+            onNavigate={setSelectedAddress}
+          />
         ) : (
           <div className="flex-1 flex items-center justify-center text-muted-foreground">
             Select a function to view details
           </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function FunctionDetail({ binaryName, address }: { binaryName: string; address: string }) {
-  const [view, setView] = useState<'pseudocode' | 'disassembly'>('pseudocode');
-
-  const { data: pseudocode, isLoading: isPseudoLoading } = useQuery({
-    queryKey: ['pseudocode', binaryName, address],
-    queryFn: () => binaryApi.getFunctionPseudocode(binaryName, address),
-    enabled: view === 'pseudocode',
-  });
-
-  const { data: disassembly, isLoading: isDisasmLoading } = useQuery({
-    queryKey: ['disassembly', binaryName, address],
-    queryFn: () => binaryApi.getFunctionDisassembly(binaryName, address),
-    enabled: view === 'disassembly',
-  });
-
-  return (
-    <div className="flex flex-col h-full">
-      <div className="border-b bg-background p-2 flex space-x-2">
-        <Button
-          variant={view === 'pseudocode' ? 'secondary' : 'ghost'}
-          size="sm"
-          onClick={() => setView('pseudocode')}
-        >
-          <Code className="mr-2 h-4 w-4" />
-          Pseudocode
-        </Button>
-        <Button
-          variant={view === 'disassembly' ? 'secondary' : 'ghost'}
-          size="sm"
-          onClick={() => setView('disassembly')}
-        >
-          <FileText className="mr-2 h-4 w-4" />
-          Disassembly
-        </Button>
-      </div>
-      
-      <div className="flex-1 overflow-auto p-4 font-mono text-sm">
-        {view === 'pseudocode' ? (
-          isPseudoLoading ? (
-            <div>Loading pseudocode...</div>
-          ) : (
-            <pre className="whitespace-pre-wrap">{pseudocode?.pseudo_code || "No pseudocode available."}</pre>
-          )
-        ) : (
-          isDisasmLoading ? (
-            <div>Loading disassembly...</div>
-          ) : (
-            <pre className="whitespace-pre-wrap">{disassembly || "No disassembly available."}</pre>
-          )
         )}
       </div>
     </div>
