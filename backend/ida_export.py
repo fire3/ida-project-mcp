@@ -173,7 +173,7 @@ class ExportOrchestrator:
         
         # Ensure pseudocode table exists
         cursor.execute("""
-            CREATE TORCHESTRATORABLE IF NOT EXISTS pseudocode (
+            CREATE TABLE IF NOT EXISTS pseudocode (
                 function_va INTEGER PRIMARY KEY,
                 content TEXT
             )
