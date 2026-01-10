@@ -56,7 +56,7 @@ class ConsoleLogger:
         # Align Context to 12 chars
         
         context_str = f"[{context}]"
-        base = f"[{ts}] {context_str:<12}"
+        base = f"[{ts}] {context_str:<14}"
         
         if self.binary_name:
             base += f" [{self.binary_name}]"
@@ -173,7 +173,7 @@ class ExportOrchestrator:
         
         # Ensure pseudocode table exists
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS pseudocode (
+            CREATE TORCHESTRATORABLE IF NOT EXISTS pseudocode (
                 function_va INTEGER PRIMARY KEY,
                 content TEXT
             )
