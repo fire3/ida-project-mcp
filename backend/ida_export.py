@@ -30,18 +30,45 @@ except ImportError:
 # Shared Utilities & Logging
 # =============================================================================
 
-PRINT_LOCK = threading.Lock()
+class ConsoleLogger:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.binary_name = None
 
-def _now_ts():
-    return time.strftime("%H:%M:%S", time.localtime())
+    def set_binary(self, name):
+        with self._lock:
+            self.binary_name = name
 
-def _default_logger(msg):
-    with PRINT_LOCK:
-        print(f"[HOST {_now_ts()}] {msg}", flush=True)
+    def log(self, msg, context="HOST"):
+        ts = time.strftime("%H:%M:%S", time.localtime())
+        
+        # Clean up worker output (strip [IDA HH:MM:SS])
+        # Example: [IDA 12:00:00] [INFO] msg -> [INFO] msg
+        if msg.startswith("[IDA ") and "]" in msg:
+             try:
+                 parts = msg.split("] ", 1)
+                 if len(parts) > 1:
+                     msg = parts[1]
+             except:
+                 pass
+        
+        # Format: [DateTime] [Context] [Binary] Msg
+        # Align Context to 12 chars
+        
+        context_str = f"[{context}]"
+        base = f"[{ts}] {context_str:<12}"
+        
+        if self.binary_name:
+            base += f" [{self.binary_name}]"
+            
+        final_msg = f"{base} {msg}"
+        
+        with self._lock:
+            print(final_msg, flush=True)
 
-def _plain_logger(msg):
-    with PRINT_LOCK:
-        print(msg, flush=True)
+    def plain(self, msg):
+        with self._lock:
+            print(msg, flush=True)
 
 def _sha256_prefix(path, n=8):
     h = hashlib.sha256()
@@ -96,13 +123,13 @@ class ExportOrchestrator:
         self.workers = workers
         self.verbose = verbose
         self.show_perf_summary = show_perf_summary
-        self.logger = _default_logger
+        self.logger = ConsoleLogger()
 
-    def run_command(self, cmd, stream_output=False, prefix=None):
-        if prefix:
-            self.logger(f"{prefix} Starting...")
+    def run_command(self, cmd, stream_output=False, context="HOST"):
+        if context != "HOST":
+            self.logger.log("Starting...", context=context)
         else:
-            self.logger("Starting command...")
+            self.logger.log("Starting command...", context="HOST")
             
         start_time = time.time()
         
@@ -115,12 +142,7 @@ class ExportOrchestrator:
                     break
                 if line:
                     stripped = line.rstrip()
-                    if prefix:
-                        with PRINT_LOCK:
-                            print(f"{prefix} {stripped}", flush=True)
-                    else:
-                        with PRINT_LOCK:
-                            print(stripped, flush=True)
+                    self.logger.log(stripped, context=context)
                     stdout_lines.append(line)
             
             returncode = process.poll()
@@ -135,23 +157,17 @@ class ExportOrchestrator:
         duration = time.time() - start_time
         
         if returncode != 0:
-            if prefix:
-                self.logger(f"{prefix} Failed (exit={returncode}, {duration:.2f}s).")
-            else:
-                self.logger(f"Command failed (exit={returncode}, {duration:.2f}s).")
+            self.logger.log(f"Failed (exit={returncode}, {duration:.2f}s).", context=context)
             if not stream_output:
-                _plain_logger(result_stdout.rstrip())
-            _plain_logger(result_stderr.rstrip())
+                self.logger.plain(result_stdout.rstrip())
+            self.logger.plain(result_stderr.rstrip())
             return {"ok": False, "duration": duration, "returncode": returncode, "stdout": result_stdout, "stderr": result_stderr}
             
-        if prefix:
-            self.logger(f"{prefix} Done ({duration:.2f}s).")
-        else:
-            self.logger(f"Done ({duration:.2f}s).")
+        self.logger.log(f"Done ({duration:.2f}s).", context=context)
         return {"ok": True, "duration": duration, "returncode": returncode, "stdout": result_stdout, "stderr": result_stderr}
 
     def merge_databases(self, main_db, worker_dbs):
-        self.logger(f"Merging {len(worker_dbs)} worker databases into {main_db}...")
+        self.logger.log(f"Merging {len(worker_dbs)} worker databases into {main_db}...", context="MERGE")
         conn = sqlite3.connect(main_db)
         cursor = conn.cursor()
         
@@ -167,7 +183,7 @@ class ExportOrchestrator:
         count = 0
         for worker_db in worker_dbs:
             if not os.path.exists(worker_db):
-                self.logger(f"Warning: Worker DB {worker_db} not found.")
+                self.logger.log(f"Warning: Worker DB {worker_db} not found.", context="MERGE")
                 continue
                 
             try:
@@ -181,10 +197,10 @@ class ExportOrchestrator:
                 cursor.execute("DETACH DATABASE worker")
                 count += 1
             except Exception as e:
-                self.logger(f"Error merging {worker_db}: {e}")
+                self.logger.log(f"Error merging {worker_db}: {e}", context="MERGE")
                 
         conn.close()
-        self.logger(f"Merged {count} worker databases.")
+        self.logger.log(f"Merged {count} worker databases.", context="MERGE")
 
     def print_full_performance_summary(self, parallel_stats, master_perf, worker_perfs):
         total_time = parallel_stats.get("total_time", 0.0)
@@ -221,36 +237,36 @@ class ExportOrchestrator:
         worker_speed = (total_funcs / worker_time) if worker_time else 0.0
         pseudo_speed = (attempted / pseudocode_time) if pseudocode_time else 0.0
 
-        _plain_logger("")
-        _plain_logger("=" * 72)
-        _plain_logger(f"{'FINAL EXPORT PERFORMANCE SUMMARY':^72}")
-        _plain_logger("=" * 72)
-        _plain_logger(f"{'Total Time':<28}: {total_time:>10.2f}s")
-        _plain_logger(f"{'Master (Step 1)':<28}: {master_time:>10.2f}s")
-        _plain_logger(f"{'Workers (Step 3)':<28}: {worker_time:>10.2f}s")
-        _plain_logger(f"{'Merge (Step 4)':<28}: {merge_time:>10.2f}s")
-        _plain_logger("-" * 72)
-        _plain_logger(f"{'Total Functions':<28}: {total_funcs:>10}")
-        _plain_logger(f"{'Worker Threads':<28}: {workers:>10}")
-        _plain_logger(f"{'Overall Speed':<28}: {overall_speed:>10.2f} funcs/sec")
-        _plain_logger(f"{'Worker Speed':<28}: {worker_speed:>10.2f} funcs/sec")
+        self.logger.plain("")
+        self.logger.plain("=" * 72)
+        self.logger.plain(f"{'FINAL EXPORT PERFORMANCE SUMMARY':^72}")
+        self.logger.plain("=" * 72)
+        self.logger.plain(f"{'Total Time':<28}: {total_time:>10.2f}s")
+        self.logger.plain(f"{'Master (Step 1)':<28}: {master_time:>10.2f}s")
+        self.logger.plain(f"{'Workers (Step 3)':<28}: {worker_time:>10.2f}s")
+        self.logger.plain(f"{'Merge (Step 4)':<28}: {merge_time:>10.2f}s")
+        self.logger.plain("-" * 72)
+        self.logger.plain(f"{'Total Functions':<28}: {total_funcs:>10}")
+        self.logger.plain(f"{'Worker Threads':<28}: {workers:>10}")
+        self.logger.plain(f"{'Overall Speed':<28}: {overall_speed:>10.2f} funcs/sec")
+        self.logger.plain(f"{'Worker Speed':<28}: {worker_speed:>10.2f} funcs/sec")
         if attempted:
-            _plain_logger(f"{'Pseudocode Attempted':<28}: {attempted:>10}")
-            _plain_logger(f"{'Pseudocode Decompiled':<28}: {decompiled:>10}")
-            _plain_logger(f"{'Pseudocode Failed':<28}: {failed:>10}")
-            _plain_logger(f"{'Pseudocode Speed':<28}: {pseudo_speed:>10.2f} funcs/sec")
+            self.logger.plain(f"{'Pseudocode Attempted':<28}: {attempted:>10}")
+            self.logger.plain(f"{'Pseudocode Decompiled':<28}: {decompiled:>10}")
+            self.logger.plain(f"{'Pseudocode Failed':<28}: {failed:>10}")
+            self.logger.plain(f"{'Pseudocode Speed':<28}: {pseudo_speed:>10.2f} funcs/sec")
 
         if master_perf and master_perf.get("timer", {}).get("steps"):
-            _plain_logger("-" * 72)
-            _plain_logger("Master Step Breakdown:")
+            self.logger.plain("-" * 72)
+            self.logger.plain("Master Step Breakdown:")
             for step in master_perf["timer"]["steps"]:
                 name = step.get("name", "")
                 dur = float(step.get("duration", 0.0))
-                _plain_logger(f"  {name:<26} {dur:>10.2f}s")
+                self.logger.plain(f"  {name:<26} {dur:>10.2f}s")
 
         if worker_perfs:
-            _plain_logger("-" * 72)
-            _plain_logger("Worker Pseudocode Breakdown:")
+            self.logger.plain("-" * 72)
+            self.logger.plain("Worker Pseudocode Breakdown:")
             for idx, wp in enumerate(worker_perfs):
                 ps = (wp.get("export", {}) or {}).get("pseudocode", {}) or {}
                 attempted_i = int(ps.get("attempted", 0))
@@ -277,23 +293,23 @@ class ExportOrchestrator:
                         range_str = f"{hex(int(min_ea_i))}-{hex(int(max_ea_i))}"
                 except Exception:
                     range_str = ""
-                _plain_logger(
+                self.logger.plain(
                     f"  Worker {idx:<3} {pseudocode_dur:>7.2f}s  funcs={attempted_i:<5} ok={decompiled_i:<5} fail={failed_i:<5} thunk={thunks_i:<4} lib={library_i:<4} none={none_i:<4} nofunc={nofunc_i:<4} rate={rate_i:>7.2f}/s {range_str}".rstrip()
                 )
                 if failed_i and top_errors_i:
                     for entry in top_errors_i[:3]:
                         err = str(entry.get("error", ""))
                         cnt = int(entry.get("count", 0))
-                        _plain_logger(f"           {cnt}x {err}")
+                        self.logger.plain(f"           {cnt}x {err}")
 
-        _plain_logger("=" * 72)
-        _plain_logger("")
+        self.logger.plain("=" * 72)
+        self.logger.plain("")
 
     def _run_master_analysis(self, master_input, output_db, temp_dir, save_idb=None):
         """
         Step 1: Run Master (Export Metadata + Dump Functions)
         """
-        self.logger("[Step 1/4] Running Master (Analysis & Metadata)")
+        self.logger.log("Running Master (Analysis & Metadata)", context="ORCHESTRATOR")
         master_start = time.time()
         
         funcs_json = os.path.join(temp_dir, "funcs.json")
@@ -312,14 +328,14 @@ class ExportOrchestrator:
         
         master_cmd = f"python \"{ida_export_script}\" \"{master_input}\" --output \"{output_db}\" --parallel-master --dump-funcs \"{funcs_json}\" --save-idb \"{analysis_base}\" --perf-json \"{master_perf_json}\" --no-perf-report --fast"
             
-        result = self.run_command(master_cmd, stream_output=True, prefix="[MASTER]")
+        result = self.run_command(master_cmd, stream_output=True, context="MASTER")
         
         if not result["ok"]:
-            self.logger("Master step failed. Aborting.")
+            self.logger.log("Master step failed. Aborting.", context="ORCHESTRATOR")
             return None
             
         if not os.path.exists(funcs_json):
-            self.logger("Error: Function list was not generated.")
+            self.logger.log("Error: Function list was not generated.", context="ORCHESTRATOR")
             return None
 
         return {
@@ -333,19 +349,19 @@ class ExportOrchestrator:
         """
         Step 2: Split Work
         """
-        self.logger("[Step 2/4] Splitting work")
+        self.logger.log("Splitting work", context="ORCHESTRATOR")
         try:
             with open(funcs_json, 'r') as f:
                 all_funcs = json.load(f)
         except Exception as e:
-            self.logger(f"Error reading funcs.json: {e}")
+            self.logger.log(f"Error reading funcs.json: {e}", context="ORCHESTRATOR")
             return None
             
         total_funcs = len(all_funcs)
-        self.logger(f"Total functions: {total_funcs}")
+        self.logger.log(f"Total functions: {total_funcs}", context="ORCHESTRATOR")
         
         if total_funcs == 0:
-            self.logger("No functions found. Nothing to parallelize.")
+            self.logger.log("No functions found. Nothing to parallelize.", context="ORCHESTRATOR")
             return {"total_funcs": 0, "worker_files": []}
 
         # Balanced partitioning
@@ -374,7 +390,7 @@ class ExportOrchestrator:
         """
         Step 3: Run Workers
         """
-        self.logger(f"[Step 3/4] Launching {len(worker_files)} workers")
+        self.logger.log(f"Launching {len(worker_files)} workers", context="ORCHESTRATOR")
         worker_start = time.time()
         
         analyzed_idb = None
@@ -387,7 +403,7 @@ class ExportOrchestrator:
             analyzed_idb = existing_idb
 
         if not analyzed_idb:
-            self.logger("Warning: No analyzed IDB found from master. Workers will try to open binary directly.")
+            self.logger.log("Warning: No analyzed IDB found from master. Workers will try to open binary directly.", context="ORCHESTRATOR")
             
         current_script_dir = os.path.dirname(os.path.abspath(__file__))
         ida_export_script = os.path.join(current_script_dir, "ida-export-worker.py")
@@ -406,26 +422,26 @@ class ExportOrchestrator:
                         shutil.copy2(analyzed_idb, worker_idb)
                     worker_input = worker_idb
                 except Exception as e:
-                    self.logger(f"Failed to copy IDB for worker {i}: {e}. Using original input.")
+                    self.logger.log(f"Failed to copy IDB for worker {i}: {e}. Using original input.", context="ORCHESTRATOR")
 
             cmd = f"python \"{ida_export_script}\" \"{worker_input}\" --output \"{worker_db}\" --parallel-worker \"{chunk_file}\""
             perf_json = os.path.join(temp_dir, f"perf_worker_{i}.json")
             cmd += f" --perf-json \"{perf_json}\" --no-perf-report"
             worker_cmds.append(cmd)
             worker_perf_paths.append(perf_json)
-            self.logger(f"Worker {i}: funcs={chunk_size} db={worker_db}")
+            self.logger.log(f"Worker {i}: funcs={chunk_size} db={worker_db}", context="ORCHESTRATOR")
 
         # Run workers
         with ThreadPoolExecutor(max_workers=self.workers) as executor:
             futures = []
             for i, cmd in enumerate(worker_cmds):
-                futures.append(executor.submit(self.run_command, cmd, True, f"[W{i}]"))
+                futures.append(executor.submit(self.run_command, cmd, True, f"WORKER_{i}"))
             results = [f.result() for f in futures]
             
         duration = time.time() - worker_start
             
         if not all(r["ok"] for r in results):
-            self.logger("Some workers failed.")
+            self.logger.log("Some workers failed.", context="ORCHESTRATOR")
             
         return {
             "duration": duration,
@@ -436,22 +452,23 @@ class ExportOrchestrator:
     def process_single_file(self, input_path, output_db, save_idb=None):
         input_path = os.path.abspath(input_path)
         if not os.path.exists(input_path):
-            self.logger(f"Error: Input file '{input_path}' not found.")
+            self.logger.log(f"Error: Input file '{input_path}' not found.", context="ERROR")
             return False
 
         if not output_db:
             output_db = os.path.splitext(input_path)[0] + ".db"
         
         output_db = os.path.abspath(output_db)
+        self.logger.set_binary(os.path.basename(input_path))
             
         if os.path.exists(output_db):
-            self.logger(f"Target database already exists: {output_db}")
-            self.logger("Skipping export.")
+            self.logger.log(f"Target database already exists: {output_db}", context="ORCHESTRATOR")
+            self.logger.log("Skipping export.", context="ORCHESTRATOR")
             return True
             
-        self.logger(f"Input  : {input_path}")
-        self.logger(f"Output : {output_db}")
-        self.logger(f"Workers: {self.workers}")
+        self.logger.log(f"Input  : {input_path}", context="ORCHESTRATOR")
+        self.logger.log(f"Output : {output_db}", context="ORCHESTRATOR")
+        self.logger.log(f"Workers: {self.workers}", context="ORCHESTRATOR")
         
         # Setup temporary directory
         temp_dir = os.path.join(os.path.dirname(output_db), f"ida_parallel_temp_{os.getpid()}_{int(time.time())}")
@@ -506,7 +523,7 @@ class ExportOrchestrator:
             stats['worker_time'] = worker_res['duration']
             
             # Step 4: Merge Results
-            self.logger("[Step 4/4] Merging results")
+            self.logger.log("Merging results", context="ORCHESTRATOR")
             merge_start = time.time()
             
             worker_dbs_paths = [w_db for _, w_db, _ in worker_files]
@@ -515,7 +532,7 @@ class ExportOrchestrator:
             stats['merge_time'] = time.time() - merge_start
             stats['total_time'] = time.time() - stats['start_time']
             
-            self.logger(f"Success! Full export saved to {output_db}")
+            self.logger.log(f"Success! Full export saved to {output_db}", context="ORCHESTRATOR")
             
             if self.show_perf_summary:
                 master_perf = _load_perf_json(master_res['master_perf_json'])
@@ -542,7 +559,7 @@ class ExportOrchestrator:
         plan = []
         
         if not target_binary:
-            self.logger("Error: target_binary is required for directory processing.")
+            self.logger.log("Error: target_binary is required for directory processing.", context="ERROR")
             return
 
         # Dependency-based scan
@@ -552,7 +569,7 @@ class ExportOrchestrator:
         if not _is_within_dir(target_path, scan_dir):
             raise ValueError("target_binary must be within scan_dir")
             
-        self.logger(f"Resolving dependencies for {target_path} in {scan_dir}...")
+        self.logger.log(f"Resolving dependencies for {target_path} in {scan_dir}...", context="BUNDLE")
         resolved = ElfService.resolve_recursive_dependencies(scan_dir, target_path)
         
         plan.append({"role": "main", "name": os.path.basename(target_path), "path": target_path})
@@ -563,7 +580,7 @@ class ExportOrchestrator:
                 plan.append({"role": "dep_missing", "name": r["name"], "path": None})
 
         if not plan:
-            self.logger("No files found to export.")
+            self.logger.log("No files found to export.", context="BUNDLE")
             return
 
         index = {
@@ -587,12 +604,12 @@ class ExportOrchestrator:
             
             # Copy binary to output dir
             out_bin = _copy_to_out_dir(src_path, out_dir)
-            self.logger(f"[BUNDLE] Copied {name} -> {out_bin}")
+            self.logger.log(f"Copied {name} -> {out_bin}", context="BUNDLE")
 
             db_name = f"{name}.{_sha256_prefix(src_path)}.db"
             out_db = os.path.join(out_dir, db_name)
             
-            self.logger(f"[BUNDLE] Exporting {name} -> {out_db}")
+            self.logger.log(f"Exporting {name} -> {out_db}", context="BUNDLE")
             
             # Call single file process directly
             # We set save_idb to the binary path (so it saves .i64 next to the binary in out_dir)
@@ -622,7 +639,7 @@ class ExportOrchestrator:
         index_path = os.path.join(out_dir, "export_index.json")
         with open(index_path, "w", encoding="utf-8") as f:
             json.dump(index, f, ensure_ascii=False, indent=2)
-        self.logger(f"[BUNDLE] Index saved to {index_path}")
+        self.logger.log(f"Index saved to {index_path}", context="BUNDLE")
         return index_path
 
 # =============================================================================
