@@ -74,6 +74,14 @@ export function Dashboard() {
                       <span>Size:</span>
                       <span>{binary.size ? (binary.size / 1024).toFixed(2) + ' KB' : 'N/A'}</span>
                     </div>
+                    <div className="flex justify-between">
+                      <span>Functions:</span>
+                      <span>{binary.function_count !== undefined ? binary.function_count : 'N/A'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Imported:</span>
+                      <span>{binary.created_at ? new Date(binary.created_at).toLocaleDateString() : 'N/A'}</span>
+                    </div>
                   </div>
                 </CardContent>
               </Card>

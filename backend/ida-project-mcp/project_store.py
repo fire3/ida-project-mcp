@@ -75,8 +75,26 @@ class ProjectStore:
         db_path = os.path.abspath(rec["db"])
         if not os.path.exists(db_path):
             return
+            
+        # Try to locate binary path
+        binary_path = None
+        try:
+            dirname = os.path.dirname(db_path)
+            basename = os.path.basename(db_path)
+            if basename.endswith(".db"):
+                for fn in os.listdir(dirname):
+                    if fn == basename: continue
+                    if basename.startswith(fn + "."):
+                        cand = os.path.join(dirname, fn)
+                        if os.path.isfile(cand):
+                             if binary_path is None or len(cand) > len(binary_path):
+                                 binary_path = cand
+        except Exception:
+            pass
+            
         q = BinaryDbQuery(
             db_path=db_path,
+            binary_path=binary_path,
             binary_id=os.path.basename(db_path),
             display_name=rec.get("display_name"),
         )
@@ -145,7 +163,5 @@ class ProjectStore:
         filters = filters or {}
         out = []
         for b in self.list_binaries():
-            out.append({
-                "binary_name": b.display_name,
-            })
+            out.append(b.get_summary())
         return out[offset : offset + limit]

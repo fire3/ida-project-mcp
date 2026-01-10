@@ -84,6 +84,7 @@ class IDAExporter:
                 meta['sha256'] = hashlib.sha256(content).hexdigest()
                 meta['md5'] = hashlib.md5(content).hexdigest()
                 meta['crc32'] = str(zlib.crc32(content))
+             meta['size'] = os.path.getsize(input_path)
         else:
              self.log(f"Warning: Input file path not found or invalid: {input_path}")
              meta['sha256'] = ""

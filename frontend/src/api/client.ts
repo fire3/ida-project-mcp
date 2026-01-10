@@ -33,6 +33,8 @@ export interface BinarySummary {
   arch?: string;
   file_format?: string;
   size?: number;
+  function_count?: number;
+  created_at?: string;
   [key: string]: any;
 }
 

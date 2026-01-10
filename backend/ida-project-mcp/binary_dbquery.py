@@ -116,6 +116,66 @@ class BinaryDbQuery:
                 pass
         return out
 
+    def get_summary(self):
+        meta = self.get_metadata_dict()
+        
+        # Arch
+        arch = meta.get("arch")
+        if not arch:
+            proc = meta.get("processor", "unknown")
+            width = meta.get("address_width", "")
+            if width:
+                arch = f"{proc} ({width}-bit)"
+            else:
+                arch = proc
+        
+        # Size
+        size = meta.get("size")
+        if size is None and self.binary_path and os.path.exists(self.binary_path):
+             try:
+                size = os.path.getsize(self.binary_path)
+             except Exception:
+                pass
+        
+        if size is not None:
+            try:
+                size = int(size)
+            except Exception:
+                size = 0
+        
+        # Function count
+        func_count = 0
+        if self._table_exists("functions"):
+            func_count = self._count("SELECT COUNT(1) FROM functions")
+            
+        # Created At
+        created_at = meta.get("created_at")
+        # If it's a timestamp (digits), convert to ISO
+        if created_at and str(created_at).isdigit():
+            import datetime
+            try:
+                ts = int(created_at)
+                dt = datetime.datetime.fromtimestamp(ts)
+                created_at = dt.isoformat()
+            except Exception:
+                pass
+        elif not created_at and self.binary_path and os.path.exists(self.binary_path):
+             import datetime
+             try:
+                 ts = os.path.getmtime(self.binary_path)
+                 created_at = datetime.datetime.fromtimestamp(ts).isoformat()
+             except Exception:
+                 pass
+        
+        return {
+            "binary_name": self.display_name,
+            "arch": arch,
+            "size": size,
+            "function_count": func_count,
+            "created_at": created_at,
+            "file_format": meta.get("format", "unknown"),
+        }
+
     def get_capabilities(self):
         has_pseudo = self._table_exists("pseudocode") and self._count("SELECT COUNT(1) FROM pseudocode") > 0
         has_disasm = self._table_exists("disasm_chunks") and self._count("SELECT COUNT(1) FROM disasm_chunks") > 0
