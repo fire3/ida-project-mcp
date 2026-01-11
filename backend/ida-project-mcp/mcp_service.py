@@ -340,7 +340,7 @@ class McpService:
 
     @mcp_tool(name="get_binary_function_pseudocode_by_address")
     def get_binary_function_pseudocode_by_address(self, binary_name: str, addresses: Union[str, int, List[Union[str, int]]], options: dict = None) -> List[Dict[str, Any]]:
-        """Get pseudocode for functions.
+        """Get decompiled C-style code for functions.
 
         Args:
             binary_name: Binary name (string).
