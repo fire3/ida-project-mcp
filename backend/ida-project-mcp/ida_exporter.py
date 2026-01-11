@@ -695,16 +695,30 @@ class IDAExporter:
         self.log("Exporting call edges...")
         data = []
         
-        for ea in idautils.Functions():
+        total_funcs = ida_funcs.get_func_qty()
+        tracker = ProgressTracker(total_funcs, self.log, "Call Edges")
+
+        for i, ea in enumerate(idautils.Functions()):
+            tracker.update(i + 1)
             func = ida_funcs.get_func(ea)
-            for head in idautils.Heads(func.start_ea, func.end_ea):
-                for xref in idautils.XrefsFrom(head, ida_xref.XREF_FAR):
+            if not func: continue
+
+            for head in idautils.FuncItems(ea):
+                for xref in idautils.XrefsFrom(head, 0):
                     if xref.iscode: 
                         t = xref.type
-                        if t == ida_xref.fl_CF or t == ida_xref.fl_CN:
+                        if t in [ida_xref.fl_CF, ida_xref.fl_CN, ida_xref.fl_JF, ida_xref.fl_JN]:
                              callee_func = ida_funcs.get_func(xref.to)
                              if callee_func:
+                                 # Skip intra-function jumps (not call edges)
+                                 if t in [ida_xref.fl_JF, ida_xref.fl_JN] and callee_func.start_ea == func.start_ea:
+                                     continue
+
                                  data.append((self.safe_int(func.start_ea), self.safe_int(callee_func.start_ea), self.safe_int(head), "direct"))
+            
+            if len(data) >= 1000:
+                 self.db.insert_call_edges(data)
+                 data = []
         
         if data:
              self.db.insert_call_edges(data)
